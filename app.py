@@ -144,4 +144,51 @@ if mode == "직원 근태 입력":
     daily_hrs = emp_info.get('daily_hours', 5.0)
     w_days_count = len(emp_info.get('work_days', []))
     weekly_work_hrs = daily_hrs * w_days_count
-    juhyu_hrs_per_week = (weekly_work_hrs / 40
+    juhyu_hrs_per_week = (weekly_work_hrs / 40) * 8 if (apply_juhyu and w_days_count > 0) else 0
+
+    curr = start_date
+    while curr <= end_date:
+        date_str = curr.strftime("%Y-%m-%d")
+        hours = temp_records.get(date_str, 0)
+        t_hours += hours
+        
+        if apply_juhyu and curr.weekday() == emp_info["holiday"]:
+            week_start = curr - timedelta(days=6)
+            is_perfect = True
+            for i in range(7):
+                check_date = week_start + timedelta(days=i)
+                if start_date <= check_date <= end_date:
+                    if check_date.weekday() in emp_info["work_days"]:
+                        if temp_records.get(check_date.strftime("%Y-%m-%d"), 0) == 0:
+                            is_perfect = False
+            if is_perfect and w_days_count > 0:
+                t_juhyu_hours += juhyu_hrs_per_week
+        curr += timedelta(days=1)
+
+    est_base = t_hours * hourly_wage
+    est_juhyu = t_juhyu_hours * hourly_wage
+    est_total = est_base + est_juhyu
+
+    st.markdown("---")
+    st.markdown("### ✨ 이번 달 나의 예상 급여")
+    e_col1, e_col2, e_col3 = st.columns(3)
+    e_col1.metric("총 근무시간", f"{t_hours:.1f} 시간")
+    e_col2.metric("주휴수당", f"{est_juhyu:,.0f} 원")
+    e_col3.metric("예상 지급액", f"{est_total:,.0f} 원")
+
+# ==========================================
+# [모드 B] 사장님 관리자 모드
+# ==========================================
+else:
+    st.subheader("🔐 사장님 관리자 모드")
+    
+    password = st.text_input("관리자 비밀번호를 입력하세요", type="password", key="admin_pw_input")
+    if password != "1234":
+        st.info("관리자 모드에 진입하려면 올바른 비밀번호를 입력하세요. (기본 비밀번호: 1234)")
+        st.stop()
+        
+    st.success("관리자 권한이 확인되었습니다.")
+
+    col_y, col_m = st.columns(2)
+    with col_y:
+        target_year = st.selectbox("정산 연
