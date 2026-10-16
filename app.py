@@ -113,33 +113,20 @@ if mode == "직원 근태 입력":
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 저장되었습니다!")
 
+    # 직원 화면용: 시급/급여 제외하고 총 누적 근무시간만 표시
     tmp_recs = emp_info.get("records", {}).copy()
     tmp_recs.update(daily_inputs)
-    h_wage = emp_info.get('hourly_wage', 10834)
-    app_j = emp_info.get('apply_juhyu', True)
     
-    t_hrs, t_j_hrs = 0, 0
-    d_hrs = emp_info.get('daily_hours', 5.0)
-    w_cnt = len(emp_info.get('work_days', []))
-    j_per_w = (d_hrs * w_cnt / 40) * 8 if (app_j and w_cnt > 0) else 0
-
+    t_hrs = 0
     curr = start_date
     while curr <= end_date:
         d_str = curr.strftime("%Y-%m-%d")
         t_hrs += tmp_recs.get(d_str, 0)
-        if app_j and curr.weekday() == emp_info["holiday"]:
-            w_start = curr - timedelta(days=6)
-            perf = all(tmp_recs.get((w_start + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= w_start + timedelta(days=i) <= end_date and (w_start + timedelta(days=i)).weekday() in emp_info["work_days"])
-            if perf and w_cnt > 0: t_j_hrs += j_per_w
         curr += timedelta(days=1)
 
-    est_tot = (t_hrs + t_j_hrs) * h_wage
     st.markdown("---")
-    st.markdown("### ✨ 이번 달 나의 예상 급여")
-    e1, e2, e3 = st.columns(3)
-    e1.metric("총 근무시간", f"{t_hrs:.1f} 시간")
-    e2.metric("주휴수당", f"{t_j_hrs * h_wage:,.0f} 원")
-    e3.metric("예상 지급액", f"{est_tot:,.0f} 원")
+    st.markdown("### ⏱️ 이번 달 나의 누적 근무시간")
+    st.metric(label="총 근무시간", value=f"{t_hrs:.1f} 시간")
 
 else:
     st.subheader("🔐 사장님 관리자 모드")
@@ -156,87 +143,4 @@ else:
     end_date = date(target_year, target_month, 3)
 
     st.markdown("---")
-    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({start_date.strftime('%m/%d')} - {end_date.strftime('%m/%d')})")
-    
-    tot_pay, summary = 0, []
-    for e_name, e_dat in data.items():
-        recs = e_dat.get("records", {})
-        hw = e_dat.get('hourly_wage', 10834)
-        aj = e_dat.get('apply_juhyu', True)
-        dh = e_dat.get('daily_hours', 5.0)
-        wd = e_dat.get('work_days', [])
-        hol = e_dat.get('holiday', 0)
-        
-        s_hrs, s_j_hrs, wc = 0, 0, len(wd)
-        jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0
-
-        c_date = start_date
-        while c_date <= end_date:
-            ds = c_date.strftime("%Y-%m-%d")
-            s_hrs += recs.get(ds, 0)
-            if aj and c_date.weekday() == hol:
-                ws = c_date - timedelta(days=6)
-                perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
-                if perf and wc > 0: s_j_hrs += jpw
-            c_date += timedelta(days=1)
-
-        epay = (s_hrs + s_j_hrs) * hw
-        tot_pay += epay
-        summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여": f"{epay:,.0f} 원"})
-
-    st.metric(label="🚨 이번 달 총 예상 인건비 지출 합계", value=f"{tot_pay:,.0f} 원")
-    if summary: st.table(pd.DataFrame(summary))
-
-    st.markdown("---")
-    st.subheader("🔍 직원별 상세 정산 및 정보 관리")
-    selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
-    emp_info = data[selected_emp]
-    hw, aj = emp_info.get('hourly_wage', 10834), emp_info.get('apply_juhyu', True)
-
-    recs = emp_info.get("records", {})
-    tot_h, tot_jh = 0, 0
-    dh = emp_info.get('daily_hours', 5.0)
-    wd_cnt = len(emp_info.get('work_days', []))
-    jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0
-
-    curr = start_date
-    while curr <= end_date:
-        ds = curr.strftime("%Y-%m-%d")
-        tot_h += recs.get(ds, 0)
-        if aj and curr.weekday() == emp_info["holiday"]:
-            ws = curr - timedelta(days=6)
-            perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
-            if perf and wd_cnt > 0: tot_jh += jpw_emp
-        curr += timedelta(days=1)
-
-    r1, r2, r3 = st.columns(3)
-    r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
-    r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-    r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
-
-    st.sidebar.header("👥 직원 관리 및 수정")
-    act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
-    curr_data = data[selected_emp] if act_type == "기존 직원 정보 수정" else {"hourly_wage": 10834, "daily_hours": 5.0, "work_days": [1,2,3,4], "holiday": 0, "apply_juhyu": True, "records": {}}
-
-    with st.sidebar.form("emp_manage_form"):
-        e_name_in = st.text_input("이름", value=selected_emp if act_type == "기존 직원 정보 수정" else "", key="new_name")
-        hw_in = st.number_input("기본 시급 (원)", value=int(curr_data.get("hourly_wage", 10834)), step=10, key="edit_w")
-        dh_in = st.number_input("1일 소정근로시간", value=float(curr_data.get("daily_hours", 5.0)), step=0.5, key="edit_h")
-        
-        st.write("소정근로일 선택")
-        saved_wd = curr_data.get("work_days", [])
-        wd_in = [i for i, d in enumerate(["월","화","수","목","금","토","일"]) if st.checkbox(d, value=i in saved_wd, key=f"w_chk_{i}")]
-        
-        hol_in = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: ["월","화","수","목","금","토","일"][x], index=int(curr_data.get("holiday", 0)), key="edit_hol")
-        aj_in = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=bool(curr_data.get("apply_juhyu", True)), key="edit_aj")
-        
-        if st.form_submit_button("저장 및 반영하기"):
-            t_name = e_name_in.strip()
-            if not t_name:
-                st.error("이름을 입력해주세요.")
-            else:
-                existing_recs = data.get(t_name, {}).get("records", {})
-                data[t_name] = {"hourly_wage": hw_in, "daily_hours": dh_in, "work_days": wd_in, "holiday": hol_in, "apply_juhyu": aj_in, "records": existing_recs}
-                save_data(data)
-                st.success(f"[{t_name}] 정보가 저장되었습니다!")
-                st.rerun()
+    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({start_date.strftime('%m/%d')} - {end_date.strftime('%m/%
