@@ -243,16 +243,39 @@ else:
     if act_type == "기존 직원 정보 수정":
         if emp_list:
             edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
-            curr_data = data[edit_target_emp]
+            
+            # 선택된 직원이 변경되면 세션 상태를 업데이트하고 즉시 rerun하여 동기화
+            if st.session_state.get("last_selected_emp") != edit_target_emp:
+                st.session_state["last_selected_emp"] = edit_target_emp
+                curr_data = data[edit_target_emp]
+                st.session_state["edit_w_input"] = int(curr_data.get("hourly_wage", 10834))
+                st.session_state["edit_h_input"] = float(curr_data.get("daily_hours", 5.0))
+                st.session_state["edit_hol_input"] = int(curr_data.get("holiday", 0))
+                st.session_state["edit_aj_input"] = bool(curr_data.get("apply_juhyu", True))
+                saved_wd = curr_data.get("work_days", [])
+                for i in range(7):
+                    st.session_state[f"wd_chk_{i}"] = i in saved_wd
+                st.rerun()
+            else:
+                curr_data = data[edit_target_emp]
         else:
             st.sidebar.warning("등록된 직원이 없습니다.")
             edit_target_emp = None
             curr_data = {}
     else:
         edit_target_emp = None
-        curr_data = {"hourly_wage": 10834, "daily_hours": 5.0, "work_days": [1,2,3,4], "holiday": 0, "apply_juhyu": True, "records": {}}
+        if st.session_state.get("last_act_type") != act_type:
+            st.session_state["last_act_type"] = act_type
+            st.session_state["last_selected_emp"] = None
+            st.session_state["edit_w_input"] = 10834
+            st.session_state["edit_h_input"] = 5.0
+            st.session_state["edit_hol_input"] = 0
+            st.session_state["edit_aj_input"] = True
+            for i in range(7):
+                st.session_state[f"wd_chk_{i}"] = i in [1, 2, 3, 4]
+            st.rerun()
+        curr_data = {}
 
-    # 폼 내부에서 드롭다운이나 셀렉터로 인한 렌더링 막힘을 방지하기 위해 일반 입력 컴포넌트로 배치
     if act_type == "신규 직원 등록":
         st.sidebar.write("### ➕ 신규 직원 등록")
         e_name_input = st.sidebar.text_input("이름", key="new_name_input")
@@ -260,21 +283,20 @@ else:
         st.sidebar.write(f"### ✏️ [{edit_target_emp}] 정보 수정")
         e_name_input = edit_target_emp
 
-    hw_in = st.sidebar.number_input("기본 시급 (원)", value=int(curr_data.get("hourly_wage", 10834)), step=10, key="edit_w_input")
-    dh_in = st.sidebar.number_input("1일 소정근로시간", value=float(curr_data.get("daily_hours", 5.0)), step=0.5, key="edit_h_input")
+    hw_in = st.sidebar.number_input("기본 시급 (원)", step=10, key="edit_w_input")
+    dh_in = st.sidebar.number_input("1일 소정근로시간", step=0.5, key="edit_h_input")
     
     st.sidebar.write("소정근로일 선택")
-    saved_wd = curr_data.get("work_days", [])
     wd_in = []
     wd_cols = st.sidebar.columns(7)
     days_lbl = ["월","화","수","목","금","토","일"]
     for i, d in enumerate(days_lbl):
         with wd_cols[i]:
-            if st.checkbox(d, value=i in saved_wd, key=f"wd_chk_{i}"):
+            if st.sidebar.checkbox(d, key=f"wd_chk_{i}"):
                 wd_in.append(i)
                 
-    hol_in = st.sidebar.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_lbl[x], index=int(curr_data.get("holiday", 0)), key="edit_hol_input")
-    aj_in = st.sidebar.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=bool(curr_data.get("apply_juhyu", True)), key="edit_aj_input")
+    hol_in = st.sidebar.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_lbl[x], key="edit_hol_input")
+    aj_in = st.sidebar.checkbox("주휴수당 지급 대상 (주 15시간 이상)", key="edit_aj_input")
     
     if st.sidebar.button("💾 저장 및 반영하기", use_container_width=True):
         t_name = e_name_input.strip()
@@ -291,5 +313,5 @@ else:
                 "records": existing_recs
             }
             save_data(data)
-            st.success(f"[{t_name}] 정보가 저장되었습니다!")
+            st.sidebar.success(f"[{t_name}] 정보가 저장되었습니다!")
             st.rerun()
