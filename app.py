@@ -172,7 +172,7 @@ if mode == "직원 근태 입력":
         curr += timedelta(days=1)
 
     st.markdown("---")
-    st.markdown("### ⏱️ 이번 달 나의 누적 근무시간")
+    st.markdown("### ⏱️ 이번 달 나의 예 근무시간")
     st.metric(label="총 근무시간", value=f"{t_hrs:.1f} 시간")
 
 else:
