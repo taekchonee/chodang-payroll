@@ -48,7 +48,7 @@ default_year_idx = years_list.index(init_year) if init_year in years_list else 0
 default_month_idx = init_month - 1
 
 if mode == "직원 근태 입력":
-    st.subheader("📝 본인 근무시간 입력 (달력)")
+    st.subheader("📝 본인 근무시간 입력")
     if not emp_list:
         st.stop()
     selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list, key="emp_select_main")
@@ -68,51 +68,67 @@ if mode == "직원 근태 입력":
         emp_info["records"] = {}
 
     all_dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
-    weeks, cur_w = [], [None] * start_date.weekday()
+    
+    # 모바일 최적화를 위해 주(Week) 단위로 날짜 그룹화 (월요일~일요일 기준 또는 순차적 주 단위)
+    weeks = []
+    current_week = []
     for d in all_dates:
-        cur_w.append(d)
-        if len(cur_w) == 7:
-            weeks.append(cur_w)
-            cur_w = []
-    if cur_w:
-        while len(cur_w) < 7:
-            cur_w.append(None)
-        weeks.append(cur_w)
+        current_week.append(d)
+        if d.weekday() == 6 or d == end_date:  # 일요일이거나 마지막 날이면 한 주로 묶음
+            weeks.append(current_week)
+            current_week = []
 
     daily_inputs = {}
     with st.form("employee_record_form"):
         st.markdown("---")
         st.write("휴무이거나 결근한 날은 **0**으로 입력해 주세요.")
         
-        hdr = st.columns(7)
-        for idx, (lbl, col_color) in enumerate(zip(["월","화","수","목","금","토","일"], ["inherit","inherit","inherit","inherit","inherit","#3b82f6","#ef4444"])):
-            hdr[idx].markdown(f"<div style='text-align: center; font-weight: bold; color: {col_color};'>{lbl}</div>", unsafe_allow_html=True)
-        st.markdown("<hr style='margin:5px 0;'>", unsafe_allow_html=True)
-
+        # 주간별 세로 카드 레이아웃 (모바일 화면에 최적화)
         for w_idx, week in enumerate(weeks):
-            r_cols = st.columns(7)
-            for i, d in enumerate(week):
-                with r_cols[i]:
-                    if d:
-                        d_str = d.strftime("%Y-%m-%d")
-                        c_col = "#3b82f6" if i == 5 else ("#ef4444" if i == 6 else "inherit")
-                        st.markdown(f"<div style='text-align: center; font-size: 14px; color: {c_col}; font-weight: bold;'>{d.month}/{d.day}</div>", unsafe_allow_html=True)
-                        
-                        def_val = emp_info["records"].get(d_str, "")
-                        if def_val == "" and d.weekday() in emp_info["work_days"]:
-                            def_val = emp_info["daily_hours"]
-                        elif def_val == "":
-                            def_val = 0.0
+            w_start_str = week[0].strftime("%m/%d")
+            w_end_str = week[-1].strftime("%m/%d")
+            st.markdown(f"**📌 {w_idx + 1주차} ({w_start_str} ~ {w_end_str})**")
+            
+            for d in week:
+                date_str = d.strftime("%Y-%m-%d")
+                wd = d.weekday()
+                
+                # 요일별 색상 지정 (토: 파랑, 일: 빨강)
+                if wd == 5:
+                    day_color = "#3b82f6"
+                    day_name = "토"
+                elif wd == 6:
+                    day_color = "#ef4444"
+                    day_name = "일"
+                else:
+                    day_color = "inherit"
+                    day_name = ["월","화","수","목","금"][wd]
+                
+                def_val = emp_info["records"].get(date_str, "")
+                if def_val == "" and wd in emp_info["work_days"]:
+                    def_val = emp_info["daily_hours"]
+                elif def_val == "":
+                    def_val = 0.0
 
-                        daily_inputs[d_str] = st.number_input(f"일자_{d_str}", value=float(def_val), step=0.5, format="%.1f", label_visibility="collapsed", key=f"emp_d_{w_idx}_{i}_{d_str}")
-                    else:
-                        st.write("")
-            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+                # 모바일 2분할 컬럼: [날짜/요일 (35%), 입력창 (65%)]
+                c1, c2 = st.columns([1, 1.8])
+                with c1:
+                    st.markdown(f"<div style='padding-top: 12px; font-weight: bold; color: {day_color};'>{d.month}/{d.day} ({day_name})</div>", unsafe_allow_html=True)
+                with c2:
+                    daily_inputs[date_str] = st.number_input(
+                        f"시간_{date_str}", 
+                        value=float(def_val), 
+                        step=0.5, 
+                        format="%.1f", 
+                        label_visibility="collapsed", 
+                        key=f"mob_d_{date_str}"
+                    )
+            st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
             
         if st.form_submit_button("💾 내 근무 기록 저장하기", use_container_width=True):
             emp_info["records"].update(daily_inputs)
             save_data(data)
-            st.success(f"[{selected_emp}] 님의 근무 기록이 저장되었습니다!")
+            st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
 
     # 직원 화면용: 시급/급여 노출 차단, 총 누적 근무시간만 표시
     tmp_recs = emp_info.get("records", {}).copy()
