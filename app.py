@@ -133,7 +133,7 @@ if mode == "직원 근태 입력":
     curr = start_date
     while curr <= end_date:
         d_str = curr.strftime("%Y-%m-%d")
-        t_hrs += tmp_recs.get(d_str, 0)
+        t_hrs += float(tmp_recs.get(d_str, 0) or 0)
         curr += timedelta(days=1)
 
     st.markdown("---")
@@ -162,22 +162,22 @@ else:
     tot_pay, summary = 0, []
     for e_name, e_dat in data.items():
         recs = e_dat.get("records", {})
-        hw = e_dat.get('hourly_wage', 10834)
+        hw = float(e_dat.get('hourly_wage', 10834))
         aj = e_dat.get('apply_juhyu', True)
-        dh = e_dat.get('daily_hours', 5.0)
+        dh = float(e_dat.get('daily_hours', 5.0))
         wd = e_dat.get('work_days', [])
         hol = e_dat.get('holiday', 0)
         
-        s_hrs, s_j_hrs, wc = 0, 0, len(wd)
-        jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0
+        s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
+        jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
 
         c_date = start_date
         while c_date <= end_date:
             ds = c_date.strftime("%Y-%m-%d")
-            s_hrs += recs.get(ds, 0)
+            s_hrs += float(recs.get(ds, 0) or 0)
             if aj and c_date.weekday() == hol:
                 ws = c_date - timedelta(days=6)
-                perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                perf = all(float(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) or 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
                 if perf and wc > 0:
                     s_j_hrs += jpw
             c_date += timedelta(days=1)
@@ -194,21 +194,21 @@ else:
     st.subheader("🔍 직원별 상세 정산")
     selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
     emp_info = data[selected_emp]
-    hw, aj = emp_info.get('hourly_wage', 10834), emp_info.get('apply_juhyu', True)
+    hw, aj = float(emp_info.get('hourly_wage', 10834)), emp_info.get('apply_juhyu', True)
 
     recs = emp_info.get("records", {})
-    tot_h, tot_jh = 0, 0
-    dh = emp_info.get('daily_hours', 5.0)
+    tot_h, tot_jh = 0.0, 0.0
+    dh = float(emp_info.get('daily_hours', 5.0))
     wd_cnt = len(emp_info.get('work_days', []))
-    jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0
+    jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0.0
 
     curr = start_date
     while curr <= end_date:
         ds = curr.strftime("%Y-%m-%d")
-        tot_h += recs.get(ds, 0)
+        tot_h += float(recs.get(ds, 0) or 0)
         if aj and curr.weekday() == emp_info["holiday"]:
             ws = curr - timedelta(days=6)
-            perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
+            perf = all(float(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) or 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
             if perf and wd_cnt > 0:
                 tot_jh += jpw_emp
         curr += timedelta(days=1)
@@ -218,7 +218,6 @@ else:
     r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
     r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
 
-    # 사장님 사이드바: 직원 관리 및 수정 (직원 선택 시 값 실시간 동기화 처리)
     st.sidebar.header("👥 직원 관리 및 수정")
     act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
     
@@ -226,7 +225,6 @@ else:
         if emp_list:
             edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
             
-            # 선택된 직원이나 모드가 바뀌었을 때 session_state 값을 강제로 갱신
             if st.session_state.get("prev_act_type") != act_type or st.session_state.get("prev_edit_emp") != edit_target_emp:
                 st.session_state["prev_act_type"] = act_type
                 st.session_state["prev_edit_emp"] = edit_target_emp
