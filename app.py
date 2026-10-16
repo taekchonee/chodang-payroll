@@ -132,7 +132,6 @@ if mode == "직원 근태 입력":
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
 
-    # 예상 급여 계산 및 표시
     temp_records = emp_info.get("records", {}).copy()
     temp_records.update(daily_inputs)
     
@@ -183,7 +182,7 @@ else:
     st.subheader("🔐 사장님 관리자 모드")
     
     password = st.text_input("관리자 비밀번호를 입력하세요", type="password", key="admin_pw_input")
-    if password != "1234":
+    if password != "107103":
         st.info("관리자 모드에 진입하려면 올바른 비밀번호를 입력하세요. (기본 비밀번호: 1234)")
         st.stop()
         
@@ -191,4 +190,17 @@ else:
 
     col_y, col_m = st.columns(2)
     with col_y:
-        target_year = st.selectbox("정산 연
+        target_year = st.selectbox("정산 연도", [2026, 2027, 2028], index=0, key="adm_y")
+    with col_m:
+        target_month = st.selectbox("정산 월", list(range(1, 13)), index=datetime.now().month - 1, key="adm_m")
+
+    if target_month == 1:
+        start_date = date(target_year - 1, 12, 4)
+    else:
+        start_date = date(target_year, target_month - 1, 4)
+    end_date = date(target_year, target_month, 3)
+
+    st.markdown("---")
+    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({start_date.strftime('%m/%d')} - {end_date.strftime('%m/%d')})")
+    
+    total_store_
