@@ -47,6 +47,19 @@ years_list = [2026, 2027, 2028]
 default_year_idx = years_list.index(init_year) if init_year in years_list else 0
 default_month_idx = init_month - 1
 
+# 기록이 없을 때 기본 소정근로시간을 자동 적용하는 헬퍼 함수
+def get_hours(recs, ds, c_date, emp_info):
+    if ds in recs and recs[ds] != "" and recs[ds] is not None:
+        try:
+            return float(recs[ds])
+        except:
+            pass
+    work_days = emp_info.get("work_days", [])
+    daily_hrs = float(emp_info.get("daily_hours", 5.0))
+    if c_date.weekday() in work_days:
+        return daily_hrs
+    return 0.0
+
 if mode == "직원 근태 입력":
     st.subheader("📝 본인 근무시간 입력")
     if not emp_list:
@@ -133,7 +146,7 @@ if mode == "직원 근태 입력":
     curr = start_date
     while curr <= end_date:
         d_str = curr.strftime("%Y-%m-%d")
-        t_hrs += float(tmp_recs.get(d_str, 0) or 0)
+        t_hrs += get_hours(tmp_recs, d_str, curr, emp_info)
         curr += timedelta(days=1)
 
     st.markdown("---")
@@ -174,10 +187,10 @@ else:
         c_date = start_date
         while c_date <= end_date:
             ds = c_date.strftime("%Y-%m-%d")
-            s_hrs += float(recs.get(ds, 0) or 0)
+            s_hrs += get_hours(recs, ds, c_date, e_dat)
             if aj and c_date.weekday() == hol:
                 ws = c_date - timedelta(days=6)
-                perf = all(float(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) or 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
                 if perf and wc > 0:
                     s_j_hrs += jpw
             c_date += timedelta(days=1)
@@ -205,10 +218,10 @@ else:
     curr = start_date
     while curr <= end_date:
         ds = curr.strftime("%Y-%m-%d")
-        tot_h += float(recs.get(ds, 0) or 0)
+        tot_h += get_hours(recs, ds, curr, emp_info)
         if aj and curr.weekday() == emp_info["holiday"]:
             ws = curr - timedelta(days=6)
-            perf = all(float(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) or 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
+            perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
             if perf and wd_cnt > 0:
                 tot_jh += jpw_emp
         curr += timedelta(days=1)
@@ -254,10 +267,10 @@ else:
     with st.sidebar.form("emp_manage_form"):
         if act_type == "신규 직원 등록":
             st.write("### ➕ 신규 직원 등록")
-            e_name_in = st.text_input("이름", key="new_name")
+            e_name_input = st.text_input("이름", key="new_name")
         else:
             st.write(f"### ✏️ [{edit_target_emp}] 정보 수정")
-            e_name_in = edit_target_emp
+            e_name_input = edit_target_emp
 
         hw_in = st.number_input("기본 시급 (원)", step=10, key="edit_w")
         dh_in = st.number_input("1일 소정근로시간", step=0.5, key="edit_h")
@@ -269,7 +282,7 @@ else:
         aj_in = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", key="edit_aj")
         
         if st.form_submit_button("저장 및 반영하기"):
-            t_name = e_name_in.strip()
+            t_name = e_name_input.strip()
             if not t_name:
                 st.error("이름을 입력해주세요.")
             else:
