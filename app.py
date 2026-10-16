@@ -69,12 +69,11 @@ if mode == "직원 근태 입력":
 
     all_dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
     
-    # 주(Week) 단위로 날짜 그룹화
     weeks = []
     current_week = []
     for d in all_dates:
         current_week.append(d)
-        if d.weekday() == 6 or d == end_date:  # 일요일이거나 마지막 날이면 한 주로 묶음
+        if d.weekday() == 6 or d == end_date:
             weeks.append(current_week)
             current_week = []
 
@@ -83,7 +82,6 @@ if mode == "직원 근태 입력":
         st.markdown("---")
         st.write("휴무이거나 결근한 날은 **0**으로 입력해 주세요.")
         
-        # 주간별 세로 카드 레이아웃 (모바일 화면 최적화)
         for w_idx, week in enumerate(weeks):
             w_start_str = week[0].strftime("%m/%d")
             w_end_str = week[-1].strftime("%m/%d")
@@ -93,7 +91,6 @@ if mode == "직원 근태 입력":
                 date_str = d.strftime("%Y-%m-%d")
                 wd = d.weekday()
                 
-                # 요일별 색상 지정 (토: 파랑, 일: 빨강)
                 if wd == 5:
                     day_color = "#3b82f6"
                     day_name = "토"
@@ -129,7 +126,6 @@ if mode == "직원 근태 입력":
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
 
-    # 직원 화면용: 시급/급여 노출 차단, 총 누적 근무시간만 표시
     tmp_recs = emp_info.get("records", {}).copy()
     tmp_recs.update(daily_inputs)
     
@@ -195,7 +191,7 @@ else:
         st.table(pd.DataFrame(summary))
 
     st.markdown("---")
-    st.subheader("🔍 직원별 상세 정산 및 정보 관리")
+    st.subheader("🔍 직원별 상세 정산")
     selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
     emp_info = data[selected_emp]
     hw, aj = emp_info.get('hourly_wage', 10834), emp_info.get('apply_juhyu', True)
@@ -213,38 +209,4 @@ else:
         if aj and curr.weekday() == emp_info["holiday"]:
             ws = curr - timedelta(days=6)
             perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
-            if perf and wd_cnt > 0:
-                tot_jh += jpw_emp
-        curr += timedelta(days=1)
-
-    r1, r2, r3 = st.columns(3)
-    r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
-    r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-    r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
-
-    st.sidebar.header("👥 직원 관리 및 수정")
-    act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
-    curr_data = data[selected_emp] if act_type == "기존 직원 정보 수정" else {"hourly_wage": 10834, "daily_hours": 5.0, "work_days": [1,2,3,4], "holiday": 0, "apply_juhyu": True, "records": {}}
-
-    with st.sidebar.form("emp_manage_form"):
-        e_name_in = st.text_input("이름", value=selected_emp if act_type == "기존 직원 정보 수정" else "", key="new_name")
-        hw_in = st.number_input("기본 시급 (원)", value=int(curr_data.get("hourly_wage", 10834)), step=10, key="edit_w")
-        dh_in = st.number_input("1일 소정근로시간", value=float(curr_data.get("daily_hours", 5.0)), step=0.5, key="edit_h")
-        
-        st.write("소정근로일 선택")
-        saved_wd = curr_data.get("work_days", [])
-        wd_in = [i for i, d in enumerate(["월","화","수","목","금","토","일"]) if st.checkbox(d, value=i in saved_wd, key=f"w_chk_{i}")]
-        
-        hol_in = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: ["월","화","수","목","금","토","일"][x], index=int(curr_data.get("holiday", 0)), key="edit_hol")
-        aj_in = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=bool(curr_data.get("apply_juhyu", True)), key="edit_aj")
-        
-        if st.form_submit_button("저장 및 반영하기"):
-            t_name = e_name_in.strip()
-            if not t_name:
-                st.error("이름을 입력해주세요.")
-            else:
-                existing_recs = data.get(t_name, {}).get("records", {})
-                data[t_name] = {"hourly_wage": hw_in, "daily_hours": dh_in, "work_days": wd_in, "holiday": hol_in, "apply_juhyu": aj_in, "records": existing_recs}
-                save_data(data)
-                st.success(f"[{t_name}] 정보가 저장되었습니다!")
-                st.rerun()
+            if perf and wd_cnt > 0
