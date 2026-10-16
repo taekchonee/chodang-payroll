@@ -49,9 +49,10 @@ default_month_idx = init_month - 1
 
 # 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 0.0을 반환하는 헬퍼 함수
 def get_hours(recs, ds, c_date, emp_info):
-    if ds in recs and recs[ds] != "" and recs[ds] is not None:
+    val = recs.get(ds, "")
+    if val != "" and val is not None:
         try:
-            return float(recs[ds])
+            return float(val)
         except:
             pass
     work_days = emp_info.get("work_days", [])
@@ -65,16 +66,13 @@ if mode == "직원 근태 입력":
     if not emp_list:
         st.stop()
     
-    # 세션 상태에 저장된 직원 이름이 없거나 목록에 없으면 첫 번째 직원으로 초기화
     if "selected_emp" not in st.session_state or st.session_state["selected_emp"] not in emp_list:
         st.session_state["selected_emp"] = emp_list[0]
 
-    # 터치하기 편한 버튼(아이콘형 칩) 형식으로 직원 선택 UI 제공
     st.write("👉 **본인의 이름을 터치해 주세요:**")
     cols = st.columns(len(emp_list))
     for idx, emp in enumerate(emp_list):
         with cols[idx]:
-            # 현재 선택된 직원이면 버튼 스타일 강조 (Streamlit primary 사용)
             btn_type = "primary" if st.session_state["selected_emp"] == emp else "secondary"
             if st.button(f"👤 {emp}", use_container_width=True, type=btn_type):
                 st.session_state["selected_emp"] = emp
@@ -133,9 +131,11 @@ if mode == "직원 근태 입력":
                     day_name = ["월","화","수","목","금"][wd]
                 
                 stored_val = emp_info["records"].get(date_str, "")
+                is_work_day = wd in emp_info["work_days"]
+
                 if stored_val != "" and stored_val is not None:
                     def_val = float(stored_val)
-                elif wd in emp_info["work_days"]:
+                elif is_work_day:
                     def_val = float(emp_info["daily_hours"])
                 else:
                     def_val = None
@@ -155,14 +155,26 @@ if mode == "직원 근태 입력":
             st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
             
         if st.form_submit_button("💾 내 근무 기록 저장하기", use_container_width=True):
-            cleaned_inputs = {k: (v if v is not None else 0.0) for k, v in daily_inputs.items()}
+            cleaned_inputs = {}
+            work_days_set = set(emp_info.get("work_days", []))
+            for k, v in daily_inputs.items():
+                d_obj = datetime.strptime(k, "%Y-%m-%d").date()
+                is_wd = d_obj.weekday() in work_days_set
+                # 소정근로일이 아니면서 값이 없거나 0.0인 경우 빈 문자열로 저장하여 빈칸 유지
+                if v is None or (v == 0.0 and not is_wd):
+                    cleaned_inputs[k] = ""
+                else:
+                    cleaned_inputs[k] = float(v)
+            
             emp_info["records"].update(cleaned_inputs)
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
             st.rerun()
 
     tmp_recs = emp_info.get("records", {}).copy()
-    tmp_recs.update({k: (v if v is not None else 0.0) for k, v in daily_inputs.items()})
+    for k, v in daily_inputs.items():
+        if v is not None:
+            tmp_recs[k] = float(v)
     
     t_hrs = 0
     curr = start_date
@@ -172,7 +184,7 @@ if mode == "직원 근태 입력":
         curr += timedelta(days=1)
 
     st.markdown("---")
-    st.markdown("### ⏱️ 이번 달 나의 예 근무시간")
+    st.markdown("### ⏱️ 이번 달 나의 누적 근무시간")
     st.metric(label="총 근무시간", value=f"{t_hrs:.1f} 시간")
 
 else:
