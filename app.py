@@ -47,7 +47,7 @@ years_list = [2026, 2027, 2028]
 default_year_idx = years_list.index(init_year) if init_year in years_list else 0
 default_month_idx = init_month - 1
 
-# 기록이 없을 때 기본 소정근로시간을 자동 적용하는 헬퍼 함수
+# 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 빈값(0.0 대신)을 반환하는 헬퍼 함수
 def get_hours(recs, ds, c_date, emp_info):
     if ds in recs and recs[ds] != "" and recs[ds] is not None:
         try:
@@ -64,7 +64,14 @@ if mode == "직원 근태 입력":
     st.subheader("📝 본인 근무시간 입력")
     if not emp_list:
         st.stop()
+    
     selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list, key="emp_select_main")
+    
+    # 직원이 변경되었을 때 폼 내부 입력값 초기화를 위한 세션 트래킹
+    if st.session_state.get("prev_emp_select") != selected_emp:
+        st.session_state["prev_emp_select"] = selected_emp
+        st.rerun()
+
     emp_info = data[selected_emp]
     
     col_y, col_m = st.columns(2)
@@ -93,7 +100,7 @@ if mode == "직원 근태 입력":
     daily_inputs = {}
     with st.form("employee_record_form"):
         st.markdown("---")
-        st.write("휴무이거나 결근한 날은 **0**으로 입력해 주세요.")
+        st.write("소정근로일이 아닌 날은 기본적으로 빈칸으로 표시되며, 필요시 숫자를 입력할 수 있습니다.")
         
         for w_idx, week in enumerate(weeks):
             w_start_str = week[0].strftime("%m/%d")
@@ -114,11 +121,14 @@ if mode == "직원 근태 입력":
                     day_color = "inherit"
                     day_name = ["월","화","수","목","금"][wd]
                 
-                def_val = emp_info["records"].get(date_str, "")
-                if def_val == "" and wd in emp_info["work_days"]:
-                    def_val = emp_info["daily_hours"]
-                elif def_val == "":
-                    def_val = 0.0
+                # 저장된 값이 있으면 그 값을, 없으면 소정근로일일 때만 기본시간, 아닐 때는 빈칸(None) 처리
+                stored_val = emp_info["records"].get(date_str, "")
+                if stored_val != "" and stored_val is not None:
+                    def_val = float(stored_val)
+                elif wd in emp_info["work_days"]:
+                    def_val = float(emp_info["daily_hours"])
+                else:
+                    def_val = None  # 빈칸 표시
 
                 c1, c2 = st.columns([1, 1.8])
                 with c1:
@@ -126,21 +136,24 @@ if mode == "직원 근태 입력":
                 with c2:
                     daily_inputs[date_str] = st.number_input(
                         f"시간_{date_str}", 
-                        value=float(def_val), 
+                        value=def_val, 
                         step=0.5, 
                         format="%.1f", 
                         label_visibility="collapsed", 
-                        key=f"mob_d_{date_str}"
+                        key=f"mob_d_{selected_emp}_{date_str}"
                     )
             st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
             
         if st.form_submit_button("💾 내 근무 기록 저장하기", use_container_width=True):
-            emp_info["records"].update(daily_inputs)
+            # None 이나 빈 값은 0 또는 빈 상태로 안전하게 변환하여 저장
+            cleaned_inputs = {k: (v if v is not None else 0.0) for k, v in daily_inputs.items()}
+            emp_info["records"].update(cleaned_inputs)
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
+            st.rerun()
 
     tmp_recs = emp_info.get("records", {}).copy()
-    tmp_recs.update(daily_inputs)
+    tmp_recs.update({k: (v if v is not None else 0.0) for k, v in daily_inputs.items()})
     
     t_hrs = 0
     curr = start_date
@@ -239,55 +252,4 @@ else:
             edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
             
             if st.session_state.get("prev_act_type") != act_type or st.session_state.get("prev_edit_emp") != edit_target_emp:
-                st.session_state["prev_act_type"] = act_type
-                st.session_state["prev_edit_emp"] = edit_target_emp
-                curr_data = data[edit_target_emp]
-                st.session_state["edit_w"] = int(curr_data.get("hourly_wage", 10834))
-                st.session_state["edit_h"] = float(curr_data.get("daily_hours", 5.0))
-                st.session_state["edit_hol"] = int(curr_data.get("holiday", 0))
-                st.session_state["edit_aj"] = bool(curr_data.get("apply_juhyu", True))
-                saved_wd = curr_data.get("work_days", [])
-                for i in range(7):
-                    st.session_state[f"w_chk_{i}"] = i in saved_wd
-        else:
-            st.sidebar.warning("등록된 직원이 없습니다.")
-            edit_target_emp = None
-    else:
-        edit_target_emp = None
-        if st.session_state.get("prev_act_type") != act_type:
-            st.session_state["prev_act_type"] = act_type
-            st.session_state["prev_edit_emp"] = None
-            st.session_state["edit_w"] = 10834
-            st.session_state["edit_h"] = 5.0
-            st.session_state["edit_hol"] = 0
-            st.session_state["edit_aj"] = True
-            for i in range(7):
-                st.session_state[f"w_chk_{i}"] = i in [1, 2, 3, 4]
-
-    with st.sidebar.form("emp_manage_form"):
-        if act_type == "신규 직원 등록":
-            st.write("### ➕ 신규 직원 등록")
-            e_name_input = st.text_input("이름", key="new_name")
-        else:
-            st.write(f"### ✏️ [{edit_target_emp}] 정보 수정")
-            e_name_input = edit_target_emp
-
-        hw_in = st.number_input("기본 시급 (원)", step=10, key="edit_w")
-        dh_in = st.number_input("1일 소정근로시간", step=0.5, key="edit_h")
-        
-        st.write("소정근로일 선택")
-        wd_in = [i for i, d in enumerate(["월","화","수","목","금","토","일"]) if st.checkbox(d, key=f"w_chk_{i}")]
-        
-        hol_in = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: ["월","화","수","목","금","토","일"][x], key="edit_hol")
-        aj_in = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", key="edit_aj")
-        
-        if st.form_submit_button("저장 및 반영하기"):
-            t_name = e_name_input.strip()
-            if not t_name:
-                st.error("이름을 입력해주세요.")
-            else:
-                existing_recs = data.get(t_name, {}).get("records", {})
-                data[t_name] = {"hourly_wage": hw_in, "daily_hours": dh_in, "work_days": wd_in, "holiday": hol_in, "apply_juhyu": aj_in, "records": existing_recs}
-                save_data(data)
-                st.success(f"[{t_name}] 정보가 저장되었습니다!")
-                st.rerun()
+                st.session_state
