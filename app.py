@@ -47,7 +47,7 @@ years_list = [2026, 2027, 2028]
 default_year_idx = years_list.index(init_year) if init_year in years_list else 0
 default_month_idx = init_month - 1
 
-# 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 0.0을 반환하는 헬퍼 함수
+# 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 기본값 반환하는 헬퍼 함수
 def get_hours(recs, ds, c_date, emp_info):
     val = recs.get(ds, "")
     if val != "" and val is not None:
@@ -66,6 +66,7 @@ if mode == "직원 근태 입력":
     if not emp_list:
         st.stop()
     
+    # 세션 상태 안전하게 초기화
     if "selected_emp" not in st.session_state or st.session_state["selected_emp"] not in emp_list:
         st.session_state["selected_emp"] = emp_list[0]
 
@@ -79,7 +80,10 @@ if mode == "직원 근태 입력":
                 st.rerun()
 
     selected_emp = st.session_state["selected_emp"]
-    emp_info = data[selected_emp]
+    emp_info = data.get(selected_emp, {})
+    if not emp_info:
+        st.session_state["selected_emp"] = emp_list[0]
+        st.rerun()
     
     st.markdown(f"### ✨ **[{selected_emp}]** 님 환영합니다!")
 
@@ -160,7 +164,6 @@ if mode == "직원 근태 입력":
             for k, v in daily_inputs.items():
                 d_obj = datetime.strptime(k, "%Y-%m-%d").date()
                 is_wd = d_obj.weekday() in work_days_set
-                # 소정근로일이 아니면서 값이 없거나 0.0인 경우 빈 문자열로 저장하여 빈칸 유지
                 if v is None or (v == 0.0 and not is_wd):
                     cleaned_inputs[k] = ""
                 else:
