@@ -209,4 +209,4 @@ else:
         if aj and curr.weekday() == emp_info["holiday"]:
             ws = curr - timedelta(days=6)
             perf = all(recs.get((ws + timedelta(days=i)).strftime("%Y-%m-%d"), 0) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
-            if perf and wd_cnt > 0
+            if perf and wd_cnt > 0 :
