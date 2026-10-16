@@ -160,7 +160,6 @@ if mode == "직원 근태 입력":
             for k, v in daily_inputs.items():
                 d_obj = datetime.strptime(k, "%Y-%m-%d").date()
                 is_wd = d_obj.weekday() in work_days_set
-                # 소정근로일이 아니면서 값이 없거나 0.0인 경우 빈 문자열로 저장하여 빈칸 유지
                 if v is None or (v == 0.0 and not is_wd):
                     cleaned_inputs[k] = ""
                 else:
@@ -214,6 +213,7 @@ else:
         dh = float(e_dat.get('daily_hours', 5.0))
         wd = e_dat.get('work_days', [])
         hol = e_dat.get('holiday', 0)
+        tax_type = e_dat.get('tax_type', '적용 안 함')
         
         s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
         jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
@@ -231,17 +231,19 @@ else:
 
         epay = (s_hrs + s_j_hrs) * hw
         tot_pay += epay
-        summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여": f"{epay:,.0f} 원"})
+        summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여(세전)": f"{epay:,.0f} 원"})
 
-    st.metric(label="🚨 이번 달 총 예상 인건비 지출 합계", value=f"{tot_pay:,.0f} 원")
+    st.metric(label="🚨 이번 달 총 예상 인건비 지출 합계 (세전)", value=f"{tot_pay:,.0f} 원")
     if summary:
         st.table(pd.DataFrame(summary))
 
     st.markdown("---")
-    st.subheader("🔍 직원별 상세 정산")
+    st.subheader("🔍 직원별 상세 정산 및 급여명세서")
     selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
     emp_info = data[selected_emp]
-    hw, aj = float(emp_info.get('hourly_wage', 10834)), emp_info.get('apply_juhyu', True)
+    hw = float(emp_info.get('hourly_wage', 10834))
+    aj = emp_info.get('apply_juhyu', True)
+    tax_type = emp_info.get('tax_type', '적용 안 함')
 
     recs = emp_info.get("records", {})
     tot_h, tot_jh = 0.0, 0.0
@@ -260,15 +262,70 @@ else:
                 tot_jh += jpw_emp
         curr += timedelta(days=1)
 
+    tot_base_pay = tot_h * hw
+    tot_juhyu_pay = tot_jh * hw
+    gross_pay = tot_base_pay + tot_juhyu_pay
+
+    # 공제 내역 계산 (10원 단위 절사)
+    deduct_tot, d_inc, d_loc, d_pen, d_hlth, d_care, d_emp = 0, 0, 0, 0, 0, 0, 0
+    if tax_type == "3.3% (사업소득)":
+        d_inc = int(gross_pay * 0.03) // 10 * 10
+        d_loc = int(gross_pay * 0.003) // 10 * 10
+        deduct_tot = d_inc + d_loc
+    elif tax_type == "4대보험 (근로소득)":
+        d_pen = int(gross_pay * 0.045) // 10 * 10
+        d_hlth = int(gross_pay * 0.03545) // 10 * 10
+        d_care = int(d_hlth * 0.1295) // 10 * 10
+        d_emp = int(gross_pay * 0.009) // 10 * 10
+        deduct_tot = d_pen + d_hlth + d_care + d_emp
+
+    net_pay = gross_pay - deduct_tot
+
     r1, r2, r3 = st.columns(3)
-    r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
-    r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-    r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+    r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_base_pay:,.0f}원")
+    r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_juhyu_pay:,.0f}원")
+    r3.metric("최종 실지급액", f"{net_pay:,.0f} 원", f"공제액: -{deduct_tot:,.0f}원", delta_color="inverse")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 🧾 급여명세서 (캡처용)")
+    with st.container(border=True):
+        st.markdown(f"<h3 style='text-align: center; margin-bottom: 0px;'>{target_year}년 {target_month}월 급여명세서</h3>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; color: gray; margin-bottom: 20px;'>지급대상기간: {start_date.strftime('%Y.%m.%d')} ~ {end_date.strftime('%Y.%m.%d')}</div>", unsafe_allow_html=True)
+        st.markdown(f"**성명:** {selected_emp} &nbsp;&nbsp;|&nbsp;&nbsp; **시급:** {hw:,.0f}원")
+        st.divider()
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### 🔵 지급 내역")
+            st.write(f"- 기본급: {tot_base_pay:,.0f} 원")
+            st.write(f"- 주휴수당: {tot_juhyu_pay:,.0f} 원")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"**지급 총액: {gross_pay:,.0f} 원**")
+        
+        with c2:
+            st.markdown("#### 🔴 공제 내역")
+            if tax_type == "3.3% (사업소득)":
+                st.write(f"- 소득세 (3%): {d_inc:,.0f} 원")
+                st.write(f"- 지방소득세 (0.3%): {d_loc:,.0f} 원")
+            elif tax_type == "4대보험 (근로소득)":
+                st.write(f"- 국민연금: {d_pen:,.0f} 원")
+                st.write(f"- 건강보험: {d_hlth:,.0f} 원")
+                st.write(f"- 장기요양보험: {d_care:,.0f} 원")
+                st.write(f"- 고용보험: {d_emp:,.0f} 원")
+            else:
+                st.write("- 공제 항목 없음")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"**공제 총액: {deduct_tot:,.0f} 원**")
+
+        st.divider()
+        st.markdown(f"<h3 style='text-align: right; color: #3b82f6;'>💰 차인지급액 (실지급액): {net_pay:,.0f} 원</h3>", unsafe_allow_html=True)
 
     # 사장님 사이드바: 직원 관리 및 수정
     st.sidebar.header("👥 직원 관리 및 수정")
     act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
     
+    tax_options = ["적용 안 함", "3.3% (사업소득)", "4대보험 (근로소득)"]
+
     if act_type == "기존 직원 정보 수정":
         if emp_list:
             edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
@@ -280,6 +337,7 @@ else:
                 st.session_state["edit_h_input"] = float(curr_data.get("daily_hours", 5.0))
                 st.session_state["edit_hol_input"] = int(curr_data.get("holiday", 0))
                 st.session_state["edit_aj_input"] = bool(curr_data.get("apply_juhyu", True))
+                st.session_state["edit_tax_input"] = curr_data.get("tax_type", "적용 안 함")
                 saved_wd = curr_data.get("work_days", [])
                 for i in range(7):
                     st.session_state[f"wd_chk_{i}"] = i in saved_wd
@@ -299,6 +357,7 @@ else:
             st.session_state["edit_h_input"] = 5.0
             st.session_state["edit_hol_input"] = 0
             st.session_state["edit_aj_input"] = True
+            st.session_state["edit_tax_input"] = "적용 안 함"
             for i in range(7):
                 st.session_state[f"wd_chk_{i}"] = i in [1, 2, 3, 4]
             st.rerun()
@@ -326,6 +385,9 @@ else:
     hol_in = st.sidebar.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_lbl[x], key="edit_hol_input")
     aj_in = st.sidebar.checkbox("주휴수당 지급 대상 (주 15시간 이상)", key="edit_aj_input")
     
+    st.sidebar.markdown("---")
+    tax_in = st.sidebar.selectbox("세금 및 보험 공제 설정", tax_options, key="edit_tax_input")
+    
     if st.sidebar.button("💾 저장 및 반영하기", use_container_width=True):
         t_name = e_name_input.strip()
         if not t_name:
@@ -337,7 +399,8 @@ else:
                 "daily_hours": dh_in, 
                 "work_days": wd_in, 
                 "holiday": hol_in, 
-                "apply_juhyu": aj_in, 
+                "apply_juhyu": aj_in,
+                "tax_type": tax_in,
                 "records": existing_recs
             }
             save_data(data)
