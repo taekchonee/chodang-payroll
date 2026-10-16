@@ -47,7 +47,7 @@ years_list = [2026, 2027, 2028]
 default_year_idx = years_list.index(init_year) if init_year in years_list else 0
 default_month_idx = init_month - 1
 
-# 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 기본값 반환하는 헬퍼 함수
+# 기록이 없을 때 소정근로일이면 1일 근로시간, 아니면 0.0을 반환하는 헬퍼 함수
 def get_hours(recs, ds, c_date, emp_info):
     val = recs.get(ds, "")
     if val != "" and val is not None:
@@ -66,7 +66,6 @@ if mode == "직원 근태 입력":
     if not emp_list:
         st.stop()
     
-    # 세션 상태 안전하게 초기화
     if "selected_emp" not in st.session_state or st.session_state["selected_emp"] not in emp_list:
         st.session_state["selected_emp"] = emp_list[0]
 
@@ -210,89 +209,89 @@ else:
     st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({s_str} - {e_str})")
     
     tot_pay, summary = 0, []
-    for e_name, e_dat in data.items():
-        recs = e_dat.get("records", {})
-        hw = float(e_dat.get('hourly_wage', 10834))
-        aj = e_dat.get('apply_juhyu', True)
-        dh = float(e_dat.get('daily_hours', 5.0))
-        wd = e_dat.get('work_days', [])
-        hol = e_dat.get('holiday', 0)
-        
-        s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
-        jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+    if emp_list:
+        for e_name, e_dat in data.items():
+            recs = e_dat.get("records", {})
+            hw = float(e_dat.get('hourly_wage', 10834))
+            aj = e_dat.get('apply_juhyu', True)
+            dh = float(e_dat.get('daily_hours', 5.0))
+            wd = e_dat.get('work_days', [])
+            hol = e_dat.get('holiday', 0)
+            
+            s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
+            jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
 
-        c_date = start_date
-        while c_date <= end_date:
-            ds = c_date.strftime("%Y-%m-%d")
-            s_hrs += get_hours(recs, ds, c_date, e_dat)
-            if aj and c_date.weekday() == hol:
-                ws = c_date - timedelta(days=6)
-                perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
-                if perf and wc > 0:
-                    s_j_hrs += jpw
-            c_date += timedelta(days=1)
+            c_date = start_date
+            while c_date <= end_date:
+                ds = c_date.strftime("%Y-%m-%d")
+                s_hrs += get_hours(recs, ds, c_date, e_dat)
+                if aj and c_date.weekday() == hol:
+                    ws = c_date - timedelta(days=6)
+                    perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                    if perf and wc > 0:
+                        s_j_hrs += jpw
+                c_date += timedelta(days=1)
 
-        epay = (s_hrs + s_j_hrs) * hw
-        tot_pay += epay
-        summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여": f"{epay:,.0f} 원"})
+            epay = (s_hrs + s_j_hrs) * hw
+            tot_pay += epay
+            summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여": f"{epay:,.0f} 원"})
 
     st.metric(label="🚨 이번 달 총 예상 인건비 지출 합계", value=f"{tot_pay:,.0f} 원")
     if summary:
         st.table(pd.DataFrame(summary))
 
-    st.markdown("---")
-    st.subheader("🔍 직원별 상세 정산")
-    selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
-    emp_info = data[selected_emp]
-    hw, aj = float(emp_info.get('hourly_wage', 10834)), emp_info.get('apply_juhyu', True)
+    if emp_list:
+        st.markdown("---")
+        st.subheader("🔍 직원별 상세 정산")
+        selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
+        emp_info = data[selected_emp]
+        hw, aj = float(emp_info.get('hourly_wage', 10834)), emp_info.get('apply_juhyu', True)
 
-    recs = emp_info.get("records", {})
-    tot_h, tot_jh = 0.0, 0.0
-    dh = float(emp_info.get('daily_hours', 5.0))
-    wd_cnt = len(emp_info.get('work_days', []))
-    jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0.0
+        recs = emp_info.get("records", {})
+        tot_h, tot_jh = 0.0, 0.0
+        dh = float(emp_info.get('daily_hours', 5.0))
+        wd_cnt = len(emp_info.get('work_days', []))
+        jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0.0
 
-    curr = start_date
-    while curr <= end_date:
-        ds = curr.strftime("%Y-%m-%d")
-        tot_h += get_hours(recs, ds, curr, emp_info)
-        if aj and curr.weekday() == emp_info["holiday"]:
-            ws = curr - timedelta(days=6)
-            perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
-            if perf and wd_cnt > 0:
-                tot_jh += jpw_emp
-        curr += timedelta(days=1)
+        curr = start_date
+        while curr <= end_date:
+            ds = curr.strftime("%Y-%m-%d")
+            tot_h += get_hours(recs, ds, curr, emp_info)
+            if aj and curr.weekday() == emp_info["holiday"]:
+                ws = curr - timedelta(days=6)
+                perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
+                if perf and wd_cnt > 0:
+                    tot_jh += jpw_emp
+            curr += timedelta(days=1)
 
-    r1, r2, r3 = st.columns(3)
-    r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
-    r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-    r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+        r1, r2, r3 = st.columns(3)
+        r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
+        r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
+        r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+    else:
+        st.info("등록된 직원이 없습니다. 왼쪽 사이드바에서 신규 직원을 먼저 등록해 주세요.")
 
     # 사장님 사이드바: 직원 관리 및 수정
     st.sidebar.header("👥 직원 관리 및 수정")
-    act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
+    act_options = ["기존 직원 정보 수정", "신규 직원 등록"] if emp_list else ["신규 직원 등록"]
+    act_type = st.sidebar.selectbox("작업 선택", act_options, key="admin_action")
     
-    if act_type == "기존 직원 정보 수정":
-        if emp_list:
-            edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
-            
-            if st.session_state.get("last_selected_emp") != edit_target_emp:
-                st.session_state["last_selected_emp"] = edit_target_emp
-                curr_data = data[edit_target_emp]
-                st.session_state["edit_w_input"] = int(curr_data.get("hourly_wage", 10834))
-                st.session_state["edit_h_input"] = float(curr_data.get("daily_hours", 5.0))
-                st.session_state["edit_hol_input"] = int(curr_data.get("holiday", 0))
-                st.session_state["edit_aj_input"] = bool(curr_data.get("apply_juhyu", True))
-                saved_wd = curr_data.get("work_days", [])
-                for i in range(7):
-                    st.session_state[f"wd_chk_{i}"] = i in saved_wd
-                st.rerun()
-            else:
-                curr_data = data[edit_target_emp]
+    if act_type == "기존 직원 정보 수정" and emp_list:
+        edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
+        
+        if st.session_state.get("last_selected_emp") != edit_target_emp:
+            st.session_state["last_selected_emp"] = edit_target_emp
+            curr_data = data[edit_target_emp]
+            st.session_state["edit_w_input"] = int(curr_data.get("hourly_wage", 10834))
+            st.session_state["edit_h_input"] = float(curr_data.get("daily_hours", 5.0))
+            st.session_state["edit_hol_input"] = int(curr_data.get("holiday", 0))
+            st.session_state["edit_aj_input"] = bool(curr_data.get("apply_juhyu", True))
+            saved_wd = curr_data.get("work_days", [])
+            for i in range(7):
+                st.session_state[f"wd_chk_{i}"] = i in saved_wd
+            st.rerun()
         else:
-            st.sidebar.warning("등록된 직원이 없습니다.")
-            edit_target_emp = None
-            curr_data = {}
+            curr_data = data[edit_target_emp]
     else:
         edit_target_emp = None
         if st.session_state.get("last_act_type") != act_type:
