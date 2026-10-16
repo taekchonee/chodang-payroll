@@ -34,10 +34,10 @@ if not emp_list and mode != "사장님 관리자 모드 (정산)":
     st.stop()
 
 # ==========================================
-# [모드 A] 직원 근태 입력 화면
+# [모드 A] 직원 근태 입력 화면 (7열 달력형식)
 # ==========================================
 if mode == "직원 근태 입력":
-    st.subheader("📝 본인 근무시간 입력")
+    st.subheader("📝 본인 근무시간 입력 (달력)")
     
     if not emp_list:
         st.stop()
@@ -62,32 +62,68 @@ if mode == "직원 근태 입력":
     if "records" not in emp_info:
         emp_info["records"] = {}
 
+    all_dates = []
+    curr = start_date
+    while curr <= end_date:
+        all_dates.append(curr)
+        curr += timedelta(days=1)
+
+    first_weekday = start_date.weekday()
+    weeks = []
+    current_week = [None] * first_weekday
+    for d in all_dates:
+        current_week.append(d)
+        if len(current_week) == 7:
+            weeks.append(current_week)
+            current_week = []
+    if current_week:
+        while len(current_week) < 7:
+            current_week.append(None)
+        weeks.append(current_week)
+
     daily_inputs = {}
 
     with st.form("employee_record_form"):
         st.markdown("---")
         st.write("휴무이거나 결근한 날은 **0**으로 입력해 주세요.")
         
-        col_grid = st.columns(4)
-        idx = 0
-        temp_date = start_date
-        
-        while temp_date <= end_date:
-            date_str = temp_date.strftime("%Y-%m-%d")
-            d_label = f"{temp_date.month}/{temp_date.day} ({['월','화','수','목','금','토','일'][temp_date.weekday()]})"
-            
-            default_val = emp_info["records"].get(date_str, "")
-            if default_val == "" and temp_date.weekday() in emp_info["work_days"]:
-                default_val = emp_info["daily_hours"]
-            elif default_val == "":
-                default_val = 0.0
+        hdr_cols = st.columns(7)
+        hdr_cols[0].markdown("<div style='text-align: center; font-weight: bold;'>월</div>", unsafe_allow_html=True)
+        hdr_cols[1].markdown("<div style='text-align: center; font-weight: bold;'>화</div>", unsafe_allow_html=True)
+        hdr_cols[2].markdown("<div style='text-align: center; font-weight: bold;'>수</div>", unsafe_allow_html=True)
+        hdr_cols[3].markdown("<div style='text-align: center; font-weight: bold;'>목</div>", unsafe_allow_html=True)
+        hdr_cols[4].markdown("<div style='text-align: center; font-weight: bold;'>금</div>", unsafe_allow_html=True)
+        hdr_cols[5].markdown("<div style='text-align: center; font-weight: bold; color: blue;'>토</div>", unsafe_allow_html=True)
+        hdr_cols[6].markdown("<div style='text-align: center; font-weight: bold; color: red;'>일</div>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:5px 0;'>", unsafe_allow_html=True)
 
-            with col_grid[idx % 4]:
-                val = st.number_input(d_label, value=float(default_val), step=0.5, key=f"emp_d_{date_str}")
-                daily_inputs[date_str] = val
-                
-            idx += 1
-            temp_date += timedelta(days=1)
+        for week in weeks:
+            row_cols = st.columns(7)
+            for i, d in enumerate(week):
+                with row_cols[i]:
+                    if d is not None:
+                        date_str = d.strftime("%Y-%m-%d")
+                        
+                        if i == 5:
+                            lbl_color = "blue"
+                        elif i == 6:
+                            lbl_color = "red"
+                        else:
+                            lbl_color = "black"
+                            
+                        st.markdown(f"<div style='text-align: center; font-size: 14px; color: {lbl_color}; font-weight: bold;'>{d.month}/{d.day}</div>", unsafe_allow_html=True)
+                        
+                        default_val = emp_info["records"].get(date_str, "")
+                        if default_val == "" and d.weekday() in emp_info["work_days"]:
+                            default_val = emp_info["daily_hours"]
+                        elif default_val == "":
+                            default_val = 0.0
+
+                        val = st.number_input(f"일자_{date_str}", value=float(default_val), step=0.5, label_visibility="collapsed", key=f"emp_d_{date_str}")
+                        daily_inputs[date_str] = val
+                    else:
+                        st.write("")
+            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
             
         submitted_emp = st.form_submit_button("💾 내 근무 기록 저장하기", use_container_width=True)
         
@@ -109,53 +145,85 @@ else:
         
     st.success("관리자 권한이 확인되었습니다.")
     
-    st.sidebar.header("👥 직원 관리")
-    selected_emp = st.sidebar.selectbox("직원 선택", emp_list if emp_list else ["등록된 직원 없음"], key="admin_emp")
+    st.sidebar.header("👥 직원 관리 및 수정")
+    
+    # 신규 등록 vs 기존 수정 선택 옵션
+    action_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"])
+    
+    if action_type == "기존 직원 정보 수정":
+        if not emp_list:
+            st.warning("등록된 직원이 없습니다. '신규 직원 등록'을 먼저 진행해 주세요.")
+            st.stop()
+        selected_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="edit_emp_select")
+        curr_data = data[selected_emp]
+    else:
+        selected_emp = None
+        curr_data = {
+            "hourly_wage": 10834,
+            "daily_hours": 5.0,
+            "work_days": [1, 2, 3, 4], # 화~금 기본
+            "holiday": 0, # 월요일 기본
+            "apply_juhyu": True,
+            "records": {}
+        }
 
-    with st.sidebar.expander("➕ 새 직원 등록/수정"):
-        with st.form("emp_form"):
-            new_name = st.text_input("이름")
-            hourly_wage = st.number_input("기본 시급 (원)", value=10834, step=10)
-            daily_hours = st.number_input("1일 소정근로시간", value=5.0, step=0.5)
-            
-            st.write("소정근로일 선택")
-            days_label = ["월", "화", "수", "목", "금", "토", "일"]
-            work_days = []
-            # 주말 근무자 설정 편의를 위해 기본값 토/일(5, 6)도 고려 가능하도록 구성
-            default_work = [False, True, True, True, True, False, False]
-            chk_cols = st.columns(7)
-            for i, d in enumerate(days_label):
-                with chk_cols[i]:
-                    if st.checkbox(d, value=default_work[i], key=f"w_{i}"):
-                        work_days.append(i)
-                        
-            holiday = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_label[x], index=0)
-            
-            # 주휴수당 적용 여부 설정 (주 15시간 미만 근로자는 체크 해제)
-            apply_juhyu = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=True)
-            
-            submitted = st.form_submit_button("직원 정보 저장")
-            if submitted and new_name:
-                data[new_name] = {
+    with st.sidebar.form("emp_manage_form"):
+        if action_type == "신규 직원 등록":
+            st.write("### ➕ 신규 직원 등록")
+            emp_name_input = st.text_input("이름")
+        else:
+            st.write(f"### ✏️ [{selected_emp}] 정보 수정")
+            emp_name_input = selected_emp # 이름은 고정 (변경 필요시 삭제 후 재등록 권장)
+
+        hourly_wage = st.number_input("기본 시급 (원)", value=int(curr_data.get("hourly_wage", 10834)), step=10)
+        daily_hours = st.number_input("1일 소정근로시간", value=float(curr_data.get("daily_hours", 5.0)), step=0.5)
+        
+        st.write("소정근로일 선택")
+        days_label = ["월", "화", "수", "목", "금", "토", "일"]
+        saved_work_days = curr_data.get("work_days", [])
+        
+        work_days = []
+        chk_cols = st.columns(7)
+        for i, d in enumerate(days_label):
+            with chk_cols[i]:
+                is_checked = i in saved_work_days
+                if st.checkbox(d, value=is_checked, key=f"w_edit_{i}"):
+                    work_days.append(i)
+                    
+        holiday = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_label[x], index=int(curr_data.get("holiday", 0)))
+        apply_juhyu = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=bool(curr_data.get("apply_juhyu", True)))
+        
+        submitted_mgmt = st.form_submit_button("저장 및 반영하기")
+        
+        if submitted_mgmt:
+            target_name = emp_name_input.strip()
+            if not target_name:
+                st.error("이름을 입력해주세요.")
+            else:
+                # 기존 레코드 보존하면서 정보 업데이트
+                existing_records = data.get(target_name, {}).get("records", {})
+                data[target_name] = {
                     "hourly_wage": hourly_wage,
                     "daily_hours": daily_hours,
                     "work_days": work_days,
                     "holiday": holiday,
                     "apply_juhyu": apply_juhyu,
-                    "records": data.get(new_name, {}).get("records", {})
+                    "records": existing_records
                 }
                 save_data(data)
-                st.success(f"{new_name} 등록 완료!")
+                st.success(f"[{target_name}] 정보가 성공적으로 저장되었습니다!")
                 st.rerun()
 
-    if not selected_emp or selected_emp == "등록된 직원 없음":
+    if not emp_list:
         st.stop()
 
-    emp_info = data[selected_emp]
-    hourly_wage = emp_info.get('hourly_wage', 10834)
-    apply_juhyu = emp_info.get('apply_juhyu', True) # 기본값 True (기존 직원 호환)
-
+    # 메인 정산 화면용 직원 셀렉터
     st.sidebar.divider()
+    admin_selected_emp = st.sidebar.selectbox("정산 조회할 직원 선택", emp_list, key="admin_emp_target")
+    emp_info = data[admin_selected_emp]
+    hourly_wage = emp_info.get('hourly_wage', 10834)
+    apply_juhyu = emp_info.get('apply_juhyu', True)
+
     st.sidebar.metric(label="설정된 기본 시급", value=f"{hourly_wage:,} 원")
     st.sidebar.write(f"주휴수당 적용: {'포함 (주 15시간 이상)' if apply_juhyu else '제외 (주 15시간 미만)'}")
 
@@ -180,8 +248,6 @@ else:
     daily_hrs = emp_info.get('daily_hours', 5.0)
     w_days_count = len(emp_info.get('work_days', []))
     weekly_work_hrs = daily_hrs * w_days_count
-    
-    # 주휴수당 대상자일 때만 비례 주휴시간 계산
     juhyu_hrs_per_week = (weekly_work_hrs / 40) * 8 if (apply_juhyu and w_days_count > 0) else 0
 
     curr = start_date
@@ -190,7 +256,6 @@ else:
         hours = records.get(date_str, 0)
         total_hours += hours
         
-        # 주휴수당 대상이면서 주휴일이 도래했을 때만 체크
         if apply_juhyu and curr.weekday() == emp_info["holiday"]:
             week_start = curr - timedelta(days=6)
             is_perfect = True
@@ -213,7 +278,7 @@ else:
     final_pay = base_pay + juhyu_pay
 
     st.markdown("---")
-    st.markdown(f"### 📊 [{selected_emp}] 님 최종 정산 리포트")
+    st.markdown(f"### 📊 [{admin_selected_emp}] 님 최종 정산 리포트")
     r_col1, r_col2, r_col3 = st.columns(3)
     r_col1.metric("총 근무 시간", f"{total_hours:,.1f} 시간", f"기본급: {base_pay:,.0f}원")
     r_col2.metric("획득 주휴 시간", f"{total_juhyu_hours:,.1f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
