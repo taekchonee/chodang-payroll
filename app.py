@@ -211,28 +211,38 @@ else:
     tot_pay, summary = 0, []
     if emp_list:
         for e_name, e_dat in data.items():
-            recs = e_dat.get("records", {})
             hw = float(e_dat.get('hourly_wage', 10834))
             aj = e_dat.get('apply_juhyu', True)
             dh = float(e_dat.get('daily_hours', 5.0))
             wd = e_dat.get('work_days', [])
             hol = e_dat.get('holiday', 0)
+            pay_type = e_dat.get('pay_type', '월급제 (4.345주 고정급)')
             
-            s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
-            jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+            wc = len(wd)
+            if pay_type == '월급제 (4.345주 고정급)':
+                weekly_work = dh * wc
+                weekly_juhyu = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+                base_pay = round(weekly_work * 4.345 * hw)
+                juhyu_pay = round(weekly_juhyu * 4.345 * hw)
+                epay = base_pay + juhyu_pay
+                s_hrs = weekly_work * 4.345
+                s_j_hrs = weekly_juhyu * 4.345
+            else:
+                recs = e_dat.get("records", {})
+                s_hrs, s_j_hrs = 0.0, 0.0
+                jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+                c_date = start_date
+                while c_date <= end_date:
+                    ds = c_date.strftime("%Y-%m-%d")
+                    s_hrs += get_hours(recs, ds, c_date, e_dat)
+                    if aj and c_date.weekday() == hol:
+                        ws = c_date - timedelta(days=6)
+                        perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                        if perf and wc > 0:
+                            s_j_hrs += jpw
+                    c_date += timedelta(days=1)
+                epay = (s_hrs + s_j_hrs) * hw
 
-            c_date = start_date
-            while c_date <= end_date:
-                ds = c_date.strftime("%Y-%m-%d")
-                s_hrs += get_hours(recs, ds, c_date, e_dat)
-                if aj and c_date.weekday() == hol:
-                    ws = c_date - timedelta(days=6)
-                    perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
-                    if perf and wc > 0:
-                        s_j_hrs += jpw
-                c_date += timedelta(days=1)
-
-            epay = (s_hrs + s_j_hrs) * hw
             tot_pay += epay
             summary.append({"직원명": e_name, "총근무시간": f"{s_hrs:.1f} 시간", "주휴시간": f"{s_j_hrs:.1f} 시간", "예상급여": f"{epay:,.0f} 원"})
 
@@ -245,29 +255,49 @@ else:
         st.subheader("🔍 직원별 상세 정산")
         selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
         emp_info = data[selected_emp]
-        hw, aj = float(emp_info.get('hourly_wage', 10834)), emp_info.get('apply_juhyu', True)
-
-        recs = emp_info.get("records", {})
-        tot_h, tot_jh = 0.0, 0.0
+        hw = float(emp_info.get('hourly_wage', 10834))
+        aj = emp_info.get('apply_juhyu', True)
         dh = float(emp_info.get('daily_hours', 5.0))
-        wd_cnt = len(emp_info.get('work_days', []))
-        jpw_emp = (dh * wd_cnt / 40) * 8 if (aj and wd_cnt > 0) else 0.0
-
-        curr = start_date
-        while curr <= end_date:
-            ds = curr.strftime("%Y-%m-%d")
-            tot_h += get_hours(recs, ds, curr, emp_info)
-            if aj and curr.weekday() == emp_info["holiday"]:
-                ws = curr - timedelta(days=6)
-                perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in emp_info["work_days"])
-                if perf and wd_cnt > 0:
-                    tot_jh += jpw_emp
-            curr += timedelta(days=1)
+        wd = emp_info.get('work_days', [])
+        hol = emp_info.get('holiday', 0)
+        pay_type = emp_info.get('pay_type', '월급제 (4.345주 고정급)')
+        
+        wc = len(wd)
+        if pay_type == '월급제 (4.345주 고정급)':
+            weekly_work = dh * wc
+            weekly_juhyu = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+            tot_h = weekly_work * 4.345
+            tot_jh = weekly_juhyu * 4.345
+            base_pay = round(tot_h * hw)
+            juhyu_pay = round(tot_jh * hw)
+            final_pay = base_pay + juhyu_pay
+        else:
+            recs = emp_info.get("records", {})
+            tot_h, tot_jh = 0.0, 0.0
+            jpw_emp = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+            curr = start_date
+            while curr <= end_date:
+                ds = curr.strftime("%Y-%m-%d")
+                tot_h += get_hours(recs, ds, curr, emp_info)
+                if aj and curr.weekday() == emp_info["holiday"]:
+                    ws = curr - timedelta(days=6)
+                    perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                    if perf and wc > 0:
+                        tot_jh += jpw_emp
+                curr += timedelta(days=1)
+            base_pay = round(tot_h * hw)
+            juhyu_pay = round(tot_jh * hw)
+            final_pay = base_pay + juhyu_pay
 
         r1, r2, r3 = st.columns(3)
-        r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
-        r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-        r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+        if pay_type == '월급제 (4.345주 고정급)':
+            r1.metric("총 근무 시간 (환산)", f"{tot_h:.2f} 시간", f"기본급: {base_pay:,.0f}원")
+            r2.metric("획득 주휴 시간 (환산)", f"{tot_jh:.2f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
+            r3.metric("최종 지급액 (고정급)", f"{final_pay:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+        else:
+            r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {base_pay:,.0f}원")
+            r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
+            r3.metric("최종 지급액", f"{final_pay:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
     else:
         st.info("등록된 직원이 없습니다. 왼쪽 사이드바에서 신규 직원을 먼저 등록해 주세요.")
 
@@ -286,6 +316,7 @@ else:
             st.session_state["edit_h_input"] = float(curr_data.get("daily_hours", 5.0))
             st.session_state["edit_hol_input"] = int(curr_data.get("holiday", 0))
             st.session_state["edit_aj_input"] = bool(curr_data.get("apply_juhyu", True))
+            st.session_state["edit_pt_input"] = curr_data.get("pay_type", "월급제 (4.345주 고정급)")
             saved_wd = curr_data.get("work_days", [])
             for i in range(7):
                 st.session_state[f"wd_chk_{i}"] = i in saved_wd
@@ -301,6 +332,7 @@ else:
             st.session_state["edit_h_input"] = 5.0
             st.session_state["edit_hol_input"] = 0
             st.session_state["edit_aj_input"] = True
+            st.session_state["edit_pt_input"] = "월급제 (4.345주 고정급)"
             for i in range(7):
                 st.session_state[f"wd_chk_{i}"] = i in [1, 2, 3, 4]
             st.rerun()
@@ -313,6 +345,7 @@ else:
         st.sidebar.write(f"### ✏️ [{edit_target_emp}] 정보 수정")
         e_name_input = edit_target_emp
 
+    pay_type_in = st.sidebar.selectbox("급여 산정 방식", ["월급제 (4.345주 고정급)", "시간제 (실제 근로일수 산정)"], key="edit_pt_input")
     hw_in = st.sidebar.number_input("기본 시급 (원)", step=10, key="edit_w_input")
     dh_in = st.sidebar.number_input("1일 소정근로시간", step=0.5, key="edit_h_input")
     
@@ -335,6 +368,7 @@ else:
         else:
             existing_recs = data.get(t_name, {}).get("records", {})
             data[t_name] = {
+                "pay_type": pay_type_in,
                 "hourly_wage": hw_in, 
                 "daily_hours": dh_in, 
                 "work_days": wd_in, 
