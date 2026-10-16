@@ -65,9 +65,26 @@ if mode == "직원 근태 입력":
     if not emp_list:
         st.stop()
     
-    selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list, key="emp_select_main")
+    # 세션 상태에 저장된 직원 이름이 없거나 목록에 없으면 첫 번째 직원으로 초기화
+    if "selected_emp" not in st.session_state or st.session_state["selected_emp"] not in emp_list:
+        st.session_state["selected_emp"] = emp_list[0]
+
+    # 터치하기 편한 버튼(아이콘형 칩) 형식으로 직원 선택 UI 제공
+    st.write("👉 **본인의 이름을 터치해 주세요:**")
+    cols = st.columns(len(emp_list))
+    for idx, emp in enumerate(emp_list):
+        with cols[idx]:
+            # 현재 선택된 직원이면 버튼 스타일 강조 (Streamlit primary 사용)
+            btn_type = "primary" if st.session_state["selected_emp"] == emp else "secondary"
+            if st.button(f"👤 {emp}", use_container_width=True, type=btn_type):
+                st.session_state["selected_emp"] = emp
+                st.rerun()
+
+    selected_emp = st.session_state["selected_emp"]
     emp_info = data[selected_emp]
     
+    st.markdown(f"### ✨ **[{selected_emp}]** 님 환영합니다!")
+
     col_y, col_m = st.columns(2)
     with col_y:
         target_year = st.selectbox("정산 연도", years_list, index=default_year_idx, key="emp_y")
@@ -92,7 +109,7 @@ if mode == "직원 근태 입력":
             current_week = []
 
     daily_inputs = {}
-    with st.form("employee_record_form"):
+    with st.form(f"employee_record_form_{selected_emp}"):
         st.markdown("---")
         st.write("소정근로일이 아닌 날은 기본적으로 빈칸으로 표시되며, 필요시 숫자를 입력할 수 있습니다.")
         
@@ -244,7 +261,6 @@ else:
         if emp_list:
             edit_target_emp = st.sidebar.selectbox("수정할 직원 선택", emp_list, key="sidebar_edit_emp")
             
-            # 선택된 직원이 변경되면 세션 상태를 업데이트하고 즉시 rerun하여 동기화
             if st.session_state.get("last_selected_emp") != edit_target_emp:
                 st.session_state["last_selected_emp"] = edit_target_emp
                 curr_data = data[edit_target_emp]
