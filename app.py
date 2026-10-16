@@ -69,7 +69,7 @@ if mode == "직원 근태 입력":
 
     all_dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
     
-    # 모바일 최적화를 위해 주(Week) 단위로 날짜 그룹화 (월요일~일요일 기준 또는 순차적 주 단위)
+    # 주(Week) 단위로 날짜 그룹화
     weeks = []
     current_week = []
     for d in all_dates:
@@ -83,11 +83,11 @@ if mode == "직원 근태 입력":
         st.markdown("---")
         st.write("휴무이거나 결근한 날은 **0**으로 입력해 주세요.")
         
-        # 주간별 세로 카드 레이아웃 (모바일 화면에 최적화)
+        # 주간별 세로 카드 레이아웃 (모바일 화면 최적화)
         for w_idx, week in enumerate(weeks):
             w_start_str = week[0].strftime("%m/%d")
             w_end_str = week[-1].strftime("%m/%d")
-            st.markdown(f"**📌 {w_idx + 1주차} ({w_start_str} ~ {w_end_str})**")
+            st.markdown(f"**📌 {w_idx + 1}주차 ({w_start_str} ~ {w_end_str})**")
             
             for d in week:
                 date_str = d.strftime("%Y-%m-%d")
@@ -110,7 +110,6 @@ if mode == "직원 근태 입력":
                 elif def_val == "":
                     def_val = 0.0
 
-                # 모바일 2분할 컬럼: [날짜/요일 (35%), 입력창 (65%)]
                 c1, c2 = st.columns([1, 1.8])
                 with c1:
                     st.markdown(f"<div style='padding-top: 12px; font-weight: bold; color: {day_color};'>{d.month}/{d.day} ({day_name})</div>", unsafe_allow_html=True)
