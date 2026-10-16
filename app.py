@@ -139,8 +139,12 @@ else:
     target_year = col_y.selectbox("정산 연도", years_list, index=default_year_idx, key="adm_y")
     target_month = col_m.selectbox("정산 월", list(range(1, 13)), index=default_month_idx, key="adm_m")
 
-    start_date = date(target_year - 1, 12, 4) if target_month == 1 else date(target_year, target_month - 1, 4)
+start_date = date(target_year - 1, 12, 4) if target_month == 1 else date(target_year, target_month - 1, 4)
     end_date = date(target_year, target_month, 3)
 
     st.markdown("---")
-    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({start_date.strftime('%m/%d')} - {end_date.strftime('%m/%
+    s_str = start_date.strftime("%m/%d")
+    e_str = end_date.strftime("%m/%d")
+    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({s_str} - {e_str})")
+    
+    tot_pay, summary = 0, []
