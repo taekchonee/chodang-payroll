@@ -25,7 +25,6 @@ data = load_data()
 
 st.title("🌱 초당예반 근태 기록 시스템")
 
-# 1. 모드 선택 (직원용 vs 사장님 관리자용)
 mode = st.sidebar.radio("접속 모드", ["직원 근태 입력", "사장님 관리자 모드 (정산)"])
 
 emp_list = list(data.keys())
@@ -46,7 +45,6 @@ if mode == "직원 근태 입력":
     selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list)
     emp_info = data[selected_emp]
     
-    # 정산 월 선택
     col_y, col_m = st.columns(2)
     with col_y:
         target_year = st.selectbox("정산 연도", [2026, 2027, 2028], index=0, key="emp_y")
@@ -105,7 +103,7 @@ else:
     st.subheader("🔐 사장님 관리자 모드")
     
     password = st.text_input("관리자 비밀번호를 입력하세요", type="password")
-    if password != "1234":  # 필요시 비밀번호 변경 가능
+    if password != "1234":
         st.info("관리자 모드에 진입하려면 올바른 비밀번호를 입력하세요. (기본 비밀번호: 1234)")
         st.stop()
         
@@ -123,6 +121,7 @@ else:
             st.write("소정근로일 선택")
             days_label = ["월", "화", "수", "목", "금", "토", "일"]
             work_days = []
+            # 주말 근무자 설정 편의를 위해 기본값 토/일(5, 6)도 고려 가능하도록 구성
             default_work = [False, True, True, True, True, False, False]
             chk_cols = st.columns(7)
             for i, d in enumerate(days_label):
@@ -132,6 +131,9 @@ else:
                         
             holiday = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: days_label[x], index=0)
             
+            # 주휴수당 적용 여부 설정 (주 15시간 미만 근로자는 체크 해제)
+            apply_juhyu = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=True)
+            
             submitted = st.form_submit_button("직원 정보 저장")
             if submitted and new_name:
                 data[new_name] = {
@@ -139,6 +141,7 @@ else:
                     "daily_hours": daily_hours,
                     "work_days": work_days,
                     "holiday": holiday,
+                    "apply_juhyu": apply_juhyu,
                     "records": data.get(new_name, {}).get("records", {})
                 }
                 save_data(data)
@@ -150,9 +153,11 @@ else:
 
     emp_info = data[selected_emp]
     hourly_wage = emp_info.get('hourly_wage', 10834)
+    apply_juhyu = emp_info.get('apply_juhyu', True) # 기본값 True (기존 직원 호환)
 
     st.sidebar.divider()
     st.sidebar.metric(label="설정된 기본 시급", value=f"{hourly_wage:,} 원")
+    st.sidebar.write(f"주휴수당 적용: {'포함 (주 15시간 이상)' if apply_juhyu else '제외 (주 15시간 미만)'}")
 
     col_y, col_m = st.columns(2)
     with col_y:
@@ -172,11 +177,12 @@ else:
     total_hours = 0
     total_juhyu_hours = 0
 
-    # 단시간 근로자 비례 주휴시간 계산 기준 적용
     daily_hrs = emp_info.get('daily_hours', 5.0)
     w_days_count = len(emp_info.get('work_days', []))
     weekly_work_hrs = daily_hrs * w_days_count
-    juhyu_hrs_per_week = (weekly_work_hrs / 40) * 8 if w_days_count > 0 else 0
+    
+    # 주휴수당 대상자일 때만 비례 주휴시간 계산
+    juhyu_hrs_per_week = (weekly_work_hrs / 40) * 8 if (apply_juhyu and w_days_count > 0) else 0
 
     curr = start_date
     while curr <= end_date:
@@ -184,7 +190,8 @@ else:
         hours = records.get(date_str, 0)
         total_hours += hours
         
-        if curr.weekday() == emp_info["holiday"]:
+        # 주휴수당 대상이면서 주휴일이 도래했을 때만 체크
+        if apply_juhyu and curr.weekday() == emp_info["holiday"]:
             week_start = curr - timedelta(days=6)
             is_perfect = True
             
