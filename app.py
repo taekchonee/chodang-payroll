@@ -31,6 +31,22 @@ if not emp_list and mode != "사장님 관리자 모드 (정산)":
     st.warning("등록된 직원이 없습니다. '사장님 관리자 모드'에서 먼저 직원을 등록해 주세요.")
     st.stop()
 
+# 현재 날짜 기준 기본 정산월 자동 계산 (매월 4일 기준)
+now = datetime.now()
+if now.day >= 4:
+    init_month = now.month + 1
+    init_year = now.year
+    if init_month > 12:
+        init_month = 1
+        init_year += 1
+else:
+    init_month = now.month
+    init_year = now.year
+
+years_list = [2026, 2027, 2028]
+default_year_idx = years_list.index(init_year) if init_year in years_list else 0
+default_month_idx = init_month - 1
+
 if mode == "직원 근태 입력":
     st.subheader("📝 본인 근무시간 입력 (달력)")
     if not emp_list:
@@ -40,9 +56,9 @@ if mode == "직원 근태 입력":
     
     col_y, col_m = st.columns(2)
     with col_y:
-        target_year = st.selectbox("정산 연도", [2026, 2027, 2028], index=0, key="emp_y")
+        target_year = st.selectbox("정산 연도", years_list, index=default_year_idx, key="emp_y")
     with col_m:
-        target_month = st.selectbox("정산 월", list(range(1, 13)), index=datetime.now().month - 1, key="emp_m")
+        target_month = st.selectbox("정산 월", list(range(1, 13)), index=default_month_idx, key="emp_m")
 
     start_date = date(target_year - 1, 12, 4) if target_month == 1 else date(target_year, target_month - 1, 4)
     end_date = date(target_year, target_month, 3)
@@ -133,8 +149,8 @@ else:
     st.success("관리자 권한 확인됨")
 
     col_y, col_m = st.columns(2)
-    target_year = col_y.selectbox("정산 연도", [2026, 2027, 2028], index=0, key="adm_y")
-    target_month = col_m.selectbox("정산 월", list(range(1, 13)), index=datetime.now().month - 1, key="adm_m")
+    target_year = col_y.selectbox("정산 연도", years_list, index=default_year_idx, key="adm_y")
+    target_month = col_m.selectbox("정산 월", list(range(1, 13)), index=default_month_idx, key="adm_m")
 
     start_date = date(target_year - 1, 12, 4) if target_month == 1 else date(target_year, target_month - 1, 4)
     end_date = date(target_year, target_month, 3)
