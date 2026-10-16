@@ -219,29 +219,28 @@ else:
             hol = e_dat.get('holiday', 0)
             pay_type = e_dat.get('pay_type', '월급제 (4.345주 고정급)')
             
-            # 1. 실제 입력된 기록을 바탕으로 총 근무 시간 및 주휴 시간 산정
-            s_hrs, s_j_hrs, wc = 0.0, 0.0, len(wd)
-            jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
-
-            c_date = start_date
-            while c_date <= end_date:
-                ds = c_date.strftime("%Y-%m-%d")
-                s_hrs += get_hours(recs, ds, c_date, e_dat)
-                if aj and c_date.weekday() == hol:
-                    ws = c_date - timedelta(days=6)
-                    perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
-                    if perf and wc > 0:
-                        s_j_hrs += jpw
-                c_date += timedelta(days=1)
-
-            # 2. 급여 산정 (월급제는 계약서 기준 4.345주 고정금액 적용, 시간제는 실제 근로시간 적용)
+            wc = len(wd)
             if pay_type == '월급제 (4.345주 고정급)':
                 weekly_work = dh * wc
                 weekly_juhyu = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
                 base_pay = round(weekly_work * 4.345 * hw)
                 juhyu_pay = round(weekly_juhyu * 4.345 * hw)
                 epay = base_pay + juhyu_pay
+                s_hrs = weekly_work * 4.345
+                s_j_hrs = weekly_juhyu * 4.345
             else:
+                s_hrs, s_j_hrs = 0.0, 0.0
+                jpw = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+                c_date = start_date
+                while c_date <= end_date:
+                    ds = c_date.strftime("%Y-%m-%d")
+                    s_hrs += get_hours(recs, ds, c_date, e_dat)
+                    if aj and c_date.weekday() == hol:
+                        ws = c_date - timedelta(days=6)
+                        perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), e_dat) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                        if perf and wc > 0:
+                            s_j_hrs += jpw
+                    c_date += timedelta(days=1)
                 epay = (s_hrs + s_j_hrs) * hw
 
             tot_pay += epay
@@ -263,36 +262,42 @@ else:
         hol = emp_info.get('holiday', 0)
         pay_type = emp_info.get('pay_type', '월급제 (4.345주 고정급)')
         
-        recs = emp_info.get("records", {})
-        tot_h, tot_jh, wc = 0.0, 0.0, len(wd)
-        jpw_emp = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
-
-        curr = start_date
-        while curr <= end_date:
-            ds = curr.strftime("%Y-%m-%d")
-            tot_h += get_hours(recs, ds, curr, emp_info)
-            if aj and curr.weekday() == emp_info["holiday"]:
-                ws = curr - timedelta(days=6)
-                perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
-                if perf and wc > 0:
-                    tot_jh += jpw_emp
-            curr += timedelta(days=1)
-
+        wc = len(wd)
         if pay_type == '월급제 (4.345주 고정급)':
             weekly_work = dh * wc
             weekly_juhyu = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
-            base_pay = round(weekly_work * 4.345 * hw)
-            juhyu_pay = round(weekly_juhyu * 4.345 * hw)
+            tot_h = weekly_work * 4.345
+            tot_jh = weekly_juhyu * 4.345
+            base_pay = round(tot_h * hw)
+            juhyu_pay = round(tot_jh * hw)
             final_pay = base_pay + juhyu_pay
         else:
+            recs = emp_info.get("records", {})
+            tot_h, tot_jh = 0.0, 0.0
+            jpw_emp = (dh * wc / 40) * 8 if (aj and wc > 0) else 0.0
+            curr = start_date
+            while curr <= end_date:
+                ds = curr.strftime("%Y-%m-%d")
+                tot_h += get_hours(recs, ds, curr, emp_info)
+                if aj and curr.weekday() == emp_info["holiday"]:
+                    ws = curr - timedelta(days=6)
+                    perf = all(get_hours(recs, (ws + timedelta(days=i)).strftime("%Y-%m-%d"), ws + timedelta(days=i), emp_info) != 0 for i in range(7) if start_date <= ws + timedelta(days=i) <= end_date and (ws + timedelta(days=i)).weekday() in wd)
+                    if perf and wc > 0:
+                        tot_jh += jpw_emp
+                curr += timedelta(days=1)
             base_pay = round(tot_h * hw)
             juhyu_pay = round(tot_jh * hw)
             final_pay = base_pay + juhyu_pay
 
         r1, r2, r3 = st.columns(3)
-        r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {base_pay:,.0f}원")
-        r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
-        r3.metric("최종 지급액", f"{final_pay:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+        if pay_type == '월급제 (4.345주 고정급)':
+            r1.metric("총 근무 시간 (환산)", f"{tot_h:.2f} 시간", f"기본급: {base_pay:,.0f}원")
+            r2.metric("획득 주휴 시간 (환산)", f"{tot_jh:.2f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
+            r3.metric("최종 지급액 (고정급)", f"{final_pay:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+        else:
+            r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {base_pay:,.0f}원")
+            r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {juhyu_pay:,.0f}원")
+            r3.metric("최종 지급액", f"{final_pay:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
     else:
         st.info("등록된 직원이 없습니다. 왼쪽 사이드바에서 신규 직원을 먼저 등록해 주세요.")
 
