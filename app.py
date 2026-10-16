@@ -34,7 +34,7 @@ if not emp_list and mode != "사장님 관리자 모드 (정산)":
     st.stop()
 
 # ==========================================
-# [모드 A] 직원 근태 입력 화면 (달력 및 예상 급여 추가)
+# [모드 A] 직원 근태 입력 화면
 # ==========================================
 if mode == "직원 근태 입력":
     st.subheader("📝 본인 근무시간 입력 (달력)")
@@ -42,7 +42,7 @@ if mode == "직원 근태 입력":
     if not emp_list:
         st.stop()
         
-    selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list)
+    selected_emp = st.selectbox("본인의 이름을 선택하세요", emp_list, key="emp_select_main")
     emp_info = data[selected_emp]
     
     col_y, col_m = st.columns(2)
@@ -97,7 +97,7 @@ if mode == "직원 근태 입력":
         hdr_cols[6].markdown("<div style='text-align: center; font-weight: bold; color: #ef4444;'>일</div>", unsafe_allow_html=True)
         st.markdown("<hr style='margin:5px 0;'>", unsafe_allow_html=True)
 
-        for week in weeks:
+        for w_idx, week in enumerate(weeks):
             row_cols = st.columns(7)
             for i, d in enumerate(week):
                 with row_cols[i]:
@@ -119,7 +119,7 @@ if mode == "직원 근태 입력":
                         elif default_val == "":
                             default_val = 0.0
 
-                        val = st.number_input(f"일자_{date_str}", value=float(default_val), step=0.5, format="%.1f", label_visibility="collapsed", key=f"emp_d_{date_str}")
+                        val = st.number_input(f"일자_{date_str}", value=float(default_val), step=0.5, format="%.1f", label_visibility="collapsed", key=f"emp_d_{w_idx}_{i}_{date_str}")
                         daily_inputs[date_str] = val
                     else:
                         st.write("")
@@ -132,7 +132,8 @@ if mode == "직원 근태 입력":
             save_data(data)
             st.success(f"[{selected_emp}] 님의 근무 기록이 안전하게 저장되었습니다!")
 
-    temp_records = emp_info.get("records", {})
+    # 예상 급여 계산 및 표시
+    temp_records = emp_info.get("records", {}).copy()
     temp_records.update(daily_inputs)
     
     hourly_wage = emp_info.get('hourly_wage', 10834)
@@ -148,4 +149,125 @@ if mode == "직원 근태 입력":
     curr = start_date
     while curr <= end_date:
         date_str = curr.strftime("%Y-%m-%d")
-        hours = temp
+        hours = temp_records.get(date_str, 0)
+        t_hours += hours
+        
+        if apply_juhyu and curr.weekday() == emp_info["holiday"]:
+            week_start = curr - timedelta(days=6)
+            is_perfect = True
+            for i in range(7):
+                check_date = week_start + timedelta(days=i)
+                if start_date <= check_date <= end_date:
+                    if check_date.weekday() in emp_info["work_days"]:
+                        if temp_records.get(check_date.strftime("%Y-%m-%d"), 0) == 0:
+                            is_perfect = False
+            if is_perfect and w_days_count > 0:
+                t_juhyu_hours += juhyu_hrs_per_week
+        curr += timedelta(days=1)
+
+    est_base = t_hours * hourly_wage
+    est_juhyu = t_juhyu_hours * hourly_wage
+    est_total = est_base + est_juhyu
+
+    st.markdown("---")
+    st.markdown("### ✨ 이번 달 나의 예상 급여")
+    e_col1, e_col2, e_col3 = st.columns(3)
+    e_col1.metric("총 근무시간", f"{t_hours:.1f} 시간")
+    e_col2.metric("주휴수당", f"{est_juhyu:,.0f} 원")
+    e_col3.metric("예상 지급액", f"{est_total:,.0f} 원")
+
+# ==========================================
+# [모드 B] 사장님 관리자 모드
+# ==========================================
+else:
+    st.subheader("🔐 사장님 관리자 모드")
+    
+    password = st.text_input("관리자 비밀번호를 입력하세요", type="password", key="admin_pw_input")
+    if password != "1234":
+        st.info("관리자 모드에 진입하려면 올바른 비밀번호를 입력하세요. (기본 비밀번호: 1234)")
+        st.stop()
+        
+    st.success("관리자 권한이 확인되었습니다.")
+
+    col_y, col_m = st.columns(2)
+    with col_y:
+        target_year = st.selectbox("정산 연도", [2026, 2027, 2028], index=0, key="adm_y")
+    with col_m:
+        target_month = st.selectbox("정산 월", list(range(1, 13)), index=datetime.now().month - 1, key="adm_m")
+
+    if target_month == 1:
+        start_date = date(target_year - 1, 12, 4)
+    else:
+        start_date = date(target_year, target_month - 1, 4)
+    end_date = date(target_year, target_month, 3)
+
+    st.markdown("---")
+    st.markdown(f"### 💸 전체 직원 급여 지출 예상 ({start_date.strftime('%m/%d')} - {end_date.strftime('%m/%d')})")
+    
+    total_store_pay = 0
+    summary_data = []
+
+    for emp_name, emp_dat in data.items():
+        recs = emp_dat.get("records", {})
+        h_wage = emp_dat.get('hourly_wage', 10834)
+        app_juhyu = emp_dat.get('apply_juhyu', True)
+        d_hrs = emp_dat.get('daily_hours', 5.0)
+        w_days = emp_dat.get('work_days', [])
+        hol = emp_dat.get('holiday', 0)
+        
+        sum_hrs = 0
+        sum_j_hrs = 0
+        w_cnt = len(w_days)
+        j_per_w = (d_hrs * w_cnt / 40) * 8 if (app_juhyu and w_cnt > 0) else 0
+
+        c_date = start_date
+        while c_date <= end_date:
+            d_str = c_date.strftime("%Y-%m-%d")
+            hrs = recs.get(d_str, 0)
+            sum_hrs += hrs
+            
+            if app_juhyu and c_date.weekday() == hol:
+                w_start = c_date - timedelta(days=6)
+                perf = True
+                for i in range(7):
+                    chk_d = w_start + timedelta(days=i)
+                    if start_date <= chk_d <= end_date:
+                        if chk_d.weekday() in w_days:
+                            if recs.get(chk_d.strftime("%Y-%m-%d"), 0) == 0:
+                                perf = False
+                if perf and w_cnt > 0:
+                    sum_j_hrs += j_per_w
+            c_date += timedelta(days=1)
+
+        b_pay = sum_hrs * h_wage
+        j_pay = sum_j_hrs * h_wage
+        e_pay = b_pay + j_pay
+        total_store_pay += e_pay
+        
+        summary_data.append({
+            "직원명": emp_name,
+            "총근무시간": f"{sum_hrs:.1f} 시간",
+            "주휴시간": f"{sum_j_hrs:.1f} 시간",
+            "예상급여": f"{e_pay:,.0f} 원"
+        })
+
+    st.metric(label="🚨 이번 달 총 예상 인건비 지출 합계", value=f"{total_store_pay:,.0f} 원")
+    
+    if summary_data:
+        st.table(pd.DataFrame(summary_data))
+
+    st.markdown("---")
+    st.subheader("🔍 직원별 상세 정산 및 정보 관리")
+    
+    selected_emp = st.selectbox("상세 조회할 직원 선택", emp_list, key="admin_emp_target")
+    emp_info = data[selected_emp]
+    hourly_wage = emp_info.get('hourly_wage', 10834)
+    apply_juhyu = emp_info.get('apply_juhyu', True)
+
+    records = emp_info.get("records", {})
+    total_hours = 0
+    total_juhyu_hours = 0
+    daily_hrs = emp_info.get('daily_hours', 5.0)
+    w_days_count = len(emp_info.get('work_days', []))
+    weekly_work_hrs = daily_hrs * w_days_count
+    j
