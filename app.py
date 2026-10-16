@@ -205,4 +205,31 @@ else:
     r1, r2, r3 = st.columns(3)
     r1.metric("총 근무 시간", f"{tot_h:.1f} 시간", f"기본급: {tot_h * hw:,.0f}원")
     r2.metric("획득 주휴 시간", f"{tot_jh:.1f} 시간", f"주휴수당: {tot_jh * hw:,.0f}원")
-    r3.metric("최종 지급액", f"{(tot_h + tot
+    r3.metric("최종 지급액", f"{(tot_h + tot_jh) * hw:,.0f} 원", f"시급: {hw:,}원", delta_color="off")
+
+    st.sidebar.header("👥 직원 관리 및 수정")
+    act_type = st.sidebar.selectbox("작업 선택", ["기존 직원 정보 수정", "신규 직원 등록"], key="admin_action")
+    curr_data = data[selected_emp] if act_type == "기존 직원 정보 수정" else {"hourly_wage": 10834, "daily_hours": 5.0, "work_days": [1,2,3,4], "holiday": 0, "apply_juhyu": True, "records": {}}
+
+    with st.sidebar.form("emp_manage_form"):
+        e_name_in = st.text_input("이름", value=selected_emp if act_type == "기존 직원 정보 수정" else "", key="new_name")
+        hw_in = st.number_input("기본 시급 (원)", value=int(curr_data.get("hourly_wage", 10834)), step=10, key="edit_w")
+        dh_in = st.number_input("1일 소정근로시간", value=float(curr_data.get("daily_hours", 5.0)), step=0.5, key="edit_h")
+        
+        st.write("소정근로일 선택")
+        saved_wd = curr_data.get("work_days", [])
+        wd_in = [i for i, d in enumerate(["월","화","수","목","금","토","일"]) if st.checkbox(d, value=i in saved_wd, key=f"w_chk_{i}")]
+        
+        hol_in = st.selectbox("주휴일 선택", options=range(7), format_func=lambda x: ["월","화","수","목","금","토","일"][x], index=int(curr_data.get("holiday", 0)), key="edit_hol")
+        aj_in = st.checkbox("주휴수당 지급 대상 (주 15시간 이상)", value=bool(curr_data.get("apply_juhyu", True)), key="edit_aj")
+        
+        if st.form_submit_button("저장 및 반영하기"):
+            t_name = e_name_in.strip()
+            if not t_name:
+                st.error("이름을 입력해주세요.")
+            else:
+                existing_recs = data.get(t_name, {}).get("records", {})
+                data[t_name] = {"hourly_wage": hw_in, "daily_hours": dh_in, "work_days": wd_in, "holiday": hol_in, "apply_juhyu": aj_in, "records": existing_recs}
+                save_data(data)
+                st.success(f"[{t_name}] 정보가 저장되었습니다!")
+                st.rerun()
