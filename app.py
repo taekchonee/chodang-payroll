@@ -30,10 +30,9 @@ mode = st.sidebar.radio("접속 모드", ["직원 근태 입력", "사장님 관
 
 emp_list = list(data.keys())
 
-if not emp_list:
+if not emp_list and mode != "사장님 관리자 모드 (정산)":
     st.warning("등록된 직원이 없습니다. '사장님 관리자 모드'에서 먼저 직원을 등록해 주세요.")
-    if mode != "사장님 관리자 모드 (정산)":
-        st.stop()
+    st.stop()
 
 # ==========================================
 # [모드 A] 직원 근태 입력 화면
@@ -65,7 +64,6 @@ if mode == "직원 근태 입력":
     if "records" not in emp_info:
         emp_info["records"] = {}
 
-    current_date = start_date
     daily_inputs = {}
 
     with st.form("employee_record_form"):
@@ -106,9 +104,8 @@ if mode == "직원 근태 입력":
 else:
     st.subheader("🔐 사장님 관리자 모드")
     
-    # 관리자 비밀번호 보호 (예: 1234 - 필요시 변경 가능)
     password = st.text_input("관리자 비밀번호를 입력하세요", type="password")
-    if password != "1234":  # 원하시는 비밀번호로 변경하세요
+    if password != "1234":  # 필요시 비밀번호 변경 가능
         st.info("관리자 모드에 진입하려면 올바른 비밀번호를 입력하세요. (기본 비밀번호: 1234)")
         st.stop()
         
@@ -120,7 +117,7 @@ else:
     with st.sidebar.expander("➕ 새 직원 등록/수정"):
         with st.form("emp_form"):
             new_name = st.text_input("이름")
-            monthly_salary = st.number_input("월 급여총액 (원)", value=1129770, step=10000)
+            hourly_wage = st.number_input("기본 시급 (원)", value=10834, step=10)
             daily_hours = st.number_input("1일 소정근로시간", value=5.0, step=0.5)
             
             st.write("소정근로일 선택")
@@ -138,7 +135,7 @@ else:
             submitted = st.form_submit_button("직원 정보 저장")
             if submitted and new_name:
                 data[new_name] = {
-                    "monthly_salary": monthly_salary,
+                    "hourly_wage": hourly_wage,
                     "daily_hours": daily_hours,
                     "work_days": work_days,
                     "holiday": holiday,
@@ -149,20 +146,13 @@ else:
                 st.rerun()
 
     if not selected_emp or selected_emp == "등록된 직원 없음":
-        st.stop0 = True
         st.stop()
 
     emp_info = data[selected_emp]
-
-    # 시급 자동 산출
-    weekly_work_hours = emp_info['daily_hours'] * len(emp_info['work_days'])
-    juhyu_hours_per_week = (weekly_work_hours / 40) * 8
-    weekly_paid_hours = weekly_work_hours + juhyu_hours_per_week
-    monthly_paid_hours = weekly_paid_hours * 4.345
-    hourly_wage = round(emp_info['monthly_salary'] / monthly_paid_hours) if monthly_paid_hours > 0 else 0
+    hourly_wage = emp_info.get('hourly_wage', 10834)
 
     st.sidebar.divider()
-    st.sidebar.metric(label="산정 시급", value=f"{hourly_wage:,} 원")
+    st.sidebar.metric(label="설정된 기본 시급", value=f"{hourly_wage:,} 원")
 
     col_y, col_m = st.columns(2)
     with col_y:
@@ -182,6 +172,12 @@ else:
     total_hours = 0
     total_juhyu_hours = 0
 
+    # 단시간 근로자 비례 주휴시간 계산 기준 적용
+    daily_hrs = emp_info.get('daily_hours', 5.0)
+    w_days_count = len(emp_info.get('work_days', []))
+    weekly_work_hrs = daily_hrs * w_days_count
+    juhyu_hrs_per_week = (weekly_work_hrs / 40) * 8 if w_days_count > 0 else 0
+
     curr = start_date
     while curr <= end_date:
         date_str = curr.strftime("%Y-%m-%d")
@@ -200,8 +196,8 @@ else:
                         if chk_hours == 0:
                             is_perfect = False
                 
-            if is_perfect and len(emp_info["work_days"]) > 0:
-                total_juhyu_hours += juhyu_hours_per_week
+            if is_perfect and w_days_count > 0:
+                total_juhyu_hours += juhyu_hrs_per_week
                 
         curr += timedelta(days=1)
 
