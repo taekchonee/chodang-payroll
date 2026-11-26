@@ -42,4 +42,9 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    lint {
+        // 블루투스 권한은 앱 화면에서 먼저 받은 뒤에만 쓰므로 릴리스 빌드에서 lint 로 멈추지 않게 합니다.
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }

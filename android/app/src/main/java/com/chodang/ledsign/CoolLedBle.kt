@@ -130,7 +130,7 @@ class CoolLedBle(private val context: Context) {
 
             enableNotify(gatt, ch, session)
 
-            val withResponse = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+            val withResponse = (ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
             ch.writeType = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             val piece = maxOf(20, session.mtu - 3)
