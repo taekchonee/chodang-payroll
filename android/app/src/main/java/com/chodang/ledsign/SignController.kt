@@ -35,6 +35,15 @@ class SignController(context: Context) {
     val fontPx: Float get() = prefs.getFloat("font_px", 16f)
     val bold: Boolean get() = prefs.getBoolean("bold", true)
 
+    /** 번갈아 표시할 때 한 장면을 보여주는 시간에 해당하는 값 (패널 단위, 실측으로 조정) */
+    var animSpeed: Int
+        get() = prefs.getInt("anim_speed", 1500)
+        set(v) = prefs.edit().putInt("anim_speed", v).apply()
+
+    /** "재료소진|조기마감" → ["재료소진", "조기마감"]. 나눌 게 없으면 null */
+    private fun pages(text: String): List<String>? =
+        text.split('|').map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.size >= 2 }
+
     fun setFont(px: Float, bold: Boolean) {
         prefs.edit().putFloat("font_px", px).putBoolean("bold", bold).apply()
     }
@@ -50,6 +59,7 @@ class SignController(context: Context) {
     /** 미리보기만 만듭니다(전송 안 함). */
     fun preview(req: ShowRequest): RenderResult {
         val (w, h) = signSize
+        pages(req.text)?.let { return TextRenderer.renderPages(it, req.color, w, h, fontPx, bold) }
         val center = resolveMode(req, w, h).first == CoolLedProtocol.Mode.STATIC
         return TextRenderer.render(req.text, req.color, w, h, fontPx, bold, center)
     }
@@ -75,6 +85,21 @@ class SignController(context: Context) {
         // 패널 크기를 정확히 알기 위해 처음 한 번은 스캔합니다.
         val sign = ble.signInfo()
         prefs.edit().putInt("width", sign.width).putInt("height", sign.height).apply()
+
+        val pageList = pages(req.text)
+        if (pageList != null) {
+            // 패널이 장면을 스스로 번갈아 반복합니다.
+            val anim = TextRenderer.renderPages(pageList, req.color, sign.width, sign.height, fontPx, bold)
+            val frames = CoolLedProtocol.chopUp(
+                CoolLedProtocol.animationPayload(pageList.size, animSpeed, anim.pixelBits),
+                CoolLedProtocol.CMD_ANIMATION,
+            ) + CoolLedProtocol.setOn(true)
+            ble.send(frames)
+            lastText = req.text
+            lastPreview = anim.preview
+            prefs.edit().putString("last_text", req.text).apply()
+            return@runJob
+        }
 
         val (mode, autoRender) = resolveMode(req, sign.width, sign.height)
         val render = if (autoRender != null && mode == CoolLedProtocol.Mode.STATIC) autoRender

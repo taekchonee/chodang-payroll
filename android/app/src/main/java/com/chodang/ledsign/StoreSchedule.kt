@@ -5,11 +5,11 @@ import java.util.Calendar
 
 /** 간판에 띄우는 상태 */
 enum class StoreStatus(val label: String, val defaultText: String, val defaultColor: LedColor) {
-    OPEN("영업중", "영업중", LedColor.GREEN),
-    BREAK("브레이크타임", "브레이크타임", LedColor.YELLOW),
-    CLOSED("영업종료", "영업종료", LedColor.RED),
-    HOLIDAY("휴무", "월요일 휴무", LedColor.RED),
-    SOLDOUT("조기마감", "재료소진 조기마감", LedColor.RED),
+    OPEN("영업중", "영업중", LedColor.WHITE),
+    CLOSED("영업종료", "영업종료", LedColor.WHITE),
+    HOLIDAY("휴무", "월요일 휴무", LedColor.WHITE),
+    // | 로 나누면 패널이 "재료소진" → "조기마감" 을 번갈아 반복합니다.
+    SOLDOUT("조기마감", "재료소진|조기마감", LedColor.WHITE),
 }
 
 /**
@@ -27,18 +27,9 @@ class StoreSchedule(context: Context) {
     var openMin: Int
         get() = prefs.getInt("open", 9 * 60)
         set(v) = prefs.edit().putInt("open", v).apply()
-    var breakStartMin: Int
-        get() = prefs.getInt("break_start", 15 * 60)
-        set(v) = prefs.edit().putInt("break_start", v).apply()
-    var breakEndMin: Int
-        get() = prefs.getInt("break_end", 17 * 60)
-        set(v) = prefs.edit().putInt("break_end", v).apply()
     var closeMin: Int
         get() = prefs.getInt("close", 14 * 60 + 30)
         set(v) = prefs.edit().putInt("close", v).apply()
-    var useBreak: Boolean
-        get() = prefs.getBoolean("use_break", false)
-        set(v) = prefs.edit().putBoolean("use_break", v).apply()
 
     /** 정기 휴무 전날 마감 후 ~ 휴무 다음 날 오픈 전에도 휴무 문구를 띄웁니다. */
     var holidayAroundClosed: Boolean
@@ -82,7 +73,6 @@ class StoreSchedule(context: Context) {
                 ((beforeOpen && isHolidayDay(prevDay)) || (!beforeOpen && isHolidayDay(nextDay))) -> StoreStatus.HOLIDAY
             !inBusinessHours -> StoreStatus.CLOSED
             soldOutToday -> StoreStatus.SOLDOUT
-            useBreak && now in breakStartMin until breakEndMin -> StoreStatus.BREAK
             else -> StoreStatus.OPEN
         }
     }

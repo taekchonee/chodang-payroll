@@ -33,6 +33,7 @@ class MainActivity : Activity() {
 
     private val modeLabels = listOf("자동" to "auto", "고정" to "static", "왼쪽으로 흐름" to "left", "오른쪽으로 흐름" to "right")
     private val fontSizes = listOf(12, 13, 14, 15, 16)
+    private val animSpeeds = listOf(500, 1000, 1500, 2000, 3000)
     private val dayLabels = listOf(
         Calendar.SUNDAY to "일", Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
         Calendar.THURSDAY to "목", Calendar.FRIDAY to "금", Calendar.SATURDAY to "토",
@@ -48,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var modeSpinner: Spinner
     private lateinit var fontSpinner: Spinner
     private lateinit var boldCheck: CheckBox
+    private lateinit var animSpinner: Spinner
     private lateinit var previewView: ImageView
     private val statusTextInputs = mutableMapOf<StoreStatus, EditText>()
     private val statusColorSpinners = mutableMapOf<StoreStatus, Spinner>()
@@ -120,16 +122,6 @@ class MainActivity : Activity() {
             label("오픈"), timeButton({ schedule.openMin }) { schedule.openMin = it },
             label("마감"), timeButton({ schedule.closeMin }) { schedule.closeMin = it },
         ))
-        root.addView(row(
-            CheckBox(this).apply {
-                text = "브레이크"
-                isChecked = schedule.useBreak
-                setOnCheckedChangeListener { _, on -> schedule.useBreak = on; onScheduleChanged() }
-            },
-            timeButton({ schedule.breakStartMin }) { schedule.breakStartMin = it },
-            label(" ~ "),
-            timeButton({ schedule.breakEndMin }) { schedule.breakEndMin = it },
-        ))
         root.addView(label("정기 휴무 요일"))
         root.addView(row(*dayLabels.map { (day, name) ->
             CheckBox(this).apply {
@@ -146,6 +138,7 @@ class MainActivity : Activity() {
 
         // 문구와 색
         root.addView(title("상태별 문구와 색"))
+        root.addView(label("문구에 | 를 넣으면 나눠서 번갈아 표시합니다. 예) 재료소진|조기마감"))
         StoreStatus.entries.forEach { s ->
             val input = EditText(this).apply { setText(schedule.text(s)); setSingleLine() }
             val color = spinner(LedColor.entries.map { it.label }).apply { setSelection(schedule.color(s).ordinal) }
@@ -171,6 +164,11 @@ class MainActivity : Activity() {
         }
         boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = signPrefs.getBoolean("bold", true) }
         root.addView(row(label("크기"), fontSpinner, boldCheck))
+        animSpinner = spinner(animSpeeds.map { "${it / 1000.0}초" }).apply {
+            setSelection(animSpeeds.indexOf(signPrefs.getInt("anim_speed", 1500)).coerceAtLeast(0))
+        }
+        root.addView(row(label("번갈아 표시 간격"), animSpinner))
+        root.addView(label("간격이 실제와 다르면 값을 바꿔 보내 보세요."))
 
         // 직접 보내기
         root.addView(title("직접 보내기"))
@@ -243,6 +241,7 @@ class MainActivity : Activity() {
 
     private fun applyFont(c: SignController) {
         c.setFont(fontSizes[fontSpinner.selectedItemPosition].toFloat(), boldCheck.isChecked)
+        c.animSpeed = animSpeeds[animSpinner.selectedItemPosition]
     }
 
     private fun showPreview() {

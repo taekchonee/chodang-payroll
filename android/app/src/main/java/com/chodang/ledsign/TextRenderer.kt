@@ -54,6 +54,8 @@ object TextRenderer {
         fontPx: Float,
         bold: Boolean,
         center: Boolean,
+        /** true 면 폭을 패널 폭에 딱 맞춥니다(가운데 정렬, 넘치면 잘림). 애니메이션 장면용 */
+        fixedWidth: Boolean = false,
     ): RenderResult {
         require(signHeight % 8 == 0) { "패널 높이는 8의 배수여야 합니다: $signHeight" }
 
@@ -65,8 +67,8 @@ object TextRenderer {
         }
         val textWidth = maxOf(1, ceil(paint.measureText(text)).toInt())
         val fits = textWidth <= signWidth
-        val outWidth = if (center && fits) signWidth else textWidth
-        val left = if (center && fits) (signWidth - textWidth) / 2 else 0
+        val outWidth = if (fixedWidth || (center && fits)) signWidth else textWidth
+        val left = if (fixedWidth || (center && fits)) (signWidth - textWidth) / 2 else 0
 
         val bounds = Rect()
         paint.getTextBounds(text.ifEmpty { " " }, 0, maxOf(1, text.length), bounds)
@@ -102,5 +104,39 @@ object TextRenderer {
         }
         mask.recycle()
         return RenderResult(r + g + b, preview, fits)
+    }
+
+    /**
+     * 여러 장면을 패널 크기로 하나씩 그려 애니메이션용으로 묶습니다.
+     * pixelBits 는 [모든 장면의 R] + [모든 장면의 G] + [모든 장면의 B] 순서입니다.
+     */
+    fun renderPages(
+        pages: List<String>,
+        color: LedColor,
+        signWidth: Int,
+        signHeight: Int,
+        fontPx: Float,
+        bold: Boolean,
+    ): RenderResult {
+        val rendered = pages.map { render(it, color, signWidth, signHeight, fontPx, bold, true, fixedWidth = true) }
+        val plane = signWidth * signHeight / 8
+        val r = java.io.ByteArrayOutputStream()
+        val g = java.io.ByteArrayOutputStream()
+        val b = java.io.ByteArrayOutputStream()
+        rendered.forEach {
+            r.write(it.pixelBits, 0, plane)
+            g.write(it.pixelBits, plane, plane)
+            b.write(it.pixelBits, plane * 2, plane)
+        }
+        // 미리보기: 장면을 가로로 나란히 (사이 3칸)
+        val gap = 3
+        val preview = Bitmap.createBitmap(
+            rendered.size * signWidth + (rendered.size - 1) * gap, signHeight, Bitmap.Config.ARGB_8888)
+        Canvas(preview).apply {
+            drawColor(Color.BLACK)
+            rendered.forEachIndexed { i, it -> drawBitmap(it.preview, (i * (signWidth + gap)).toFloat(), 0f, null) }
+        }
+        return RenderResult(r.toByteArray() + g.toByteArray() + b.toByteArray(), preview,
+            rendered.all { it.fits })
     }
 }

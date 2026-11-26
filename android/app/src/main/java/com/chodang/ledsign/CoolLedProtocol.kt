@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
  */
 object CoolLedProtocol {
     const val CMD_TEXT = 0x02
+    const val CMD_ANIMATION = 0x04
     const val CMD_MODE = 0x06
     const val CMD_SPEED = 0x07
     const val CMD_BRIGHTNESS = 0x08
@@ -95,6 +96,19 @@ object CoolLedProtocol {
         out.write(meta)
         out.write((pixelBits.size shr 8) and 0xFF); out.write(pixelBits.size and 0xFF)
         out.write(pixelBits)
+        return out.toByteArray()
+    }
+
+    /**
+     * 애니메이션 데이터. 패널이 장면들을 스스로 반복해서 보여줍니다.
+     * 24바이트 0 + 장면 수(1) + 속도(2) + [모든 장면의 R] + [모든 장면의 G] + [모든 장면의 B]
+     */
+    fun animationPayload(frameCount: Int, speed: Int, planes: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(ByteArray(24))
+        out.write(frameCount.coerceIn(1, 255))
+        out.write((speed shr 8) and 0xFF); out.write(speed and 0xFF)
+        out.write(planes)
         return out.toByteArray()
     }
 }
