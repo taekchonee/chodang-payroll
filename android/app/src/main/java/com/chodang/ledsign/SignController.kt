@@ -45,6 +45,8 @@ class SignController(context: Context) {
 
     val signName: String? get() = ble.lastSign?.name
 
+    fun locationBlocksScan(): Boolean = ble.locationBlocksScan()
+
     /** 미리보기만 만듭니다(전송 안 함). */
     fun preview(req: ShowRequest): RenderResult {
         val (w, h) = signSize
@@ -99,7 +101,7 @@ class SignController(context: Context) {
     fun brightness(value: Int): String =
         runJob("밝기 $value") { ble.send(CoolLedProtocol.setBrightness(value)) }.get(60, TimeUnit.SECONDS)
 
-    fun findSign(): String = runJob("패널 찾기") { ble.scan() }.get(30, TimeUnit.SECONDS)
+    fun findSign(): String = runJob("패널 찾기") { ble.scan(onlyKnown = false) }.get(30, TimeUnit.SECONDS)
 
     private fun runJob(what: String, block: () -> Unit) = worker.submit(Callable {
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.KOREA).format(java.util.Date())

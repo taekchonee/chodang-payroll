@@ -40,6 +40,7 @@ class MainActivity : Activity() {
 
     private lateinit var schedule: StoreSchedule
     private lateinit var statusView: TextView
+    private lateinit var locationButton: Button
     private lateinit var soldOutButton: Button
     private lateinit var closedTodayButton: Button
     private lateinit var textInput: EditText
@@ -86,6 +87,10 @@ class MainActivity : Activity() {
             button("권한 허용") { requestPermissionsNow() },
             button("절전 예외 설정") { askIgnoreBatteryOptimization() },
         ))
+        locationButton = button("위치(GPS) 켜기") {
+            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        }
+        root.addView(row(locationButton))
 
         // 오늘만 바꾸기
         root.addView(title("오늘만 바꾸기"))
@@ -263,8 +268,11 @@ class MainActivity : Activity() {
         val c = svc?.controller
         val (w, h) = c?.signSize ?: (CoolLedBle.DEFAULT_WIDTH to CoolLedBle.DEFAULT_HEIGHT)
         val target = schedule.target()
+        val locationOff = c?.locationBlocksScan() == true
+        locationButton.visibility = if (locationOff) View.VISIBLE else View.GONE
         statusView.text = buildString {
             appendLine("서비스: " + if (svc == null) "꺼짐 (권한을 허용해 주세요)" else "실행 중")
+            if (locationOff) appendLine("⚠ 위치(GPS)가 꺼져 있어 패널을 찾을 수 없습니다")
             appendLine("패널: ${c?.signName ?: "아직 못 찾음"} (${w}×${h})")
             appendLine("지금 시간표: ${target.label}" + if (schedule.autoEnabled) "" else " (자동 전환 꺼짐)")
             appendLine("간판 문구: ${c?.lastText ?: "-"}")

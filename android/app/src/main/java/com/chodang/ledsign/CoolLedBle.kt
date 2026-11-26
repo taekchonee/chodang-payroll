@@ -9,9 +9,12 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.location.LocationManager
+import android.os.Build
 import android.util.Log
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -39,13 +42,35 @@ class CoolLedBle(private val context: Context) {
     }
 
     private val adapter get() = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+    private val prefs = context.getSharedPreferences("ble", Context.MODE_PRIVATE)
 
-    /** 마지막으로 찾은 패널 (주소와 크기) */
-    @Volatile var lastSign: SignInfo? = null
+    /**
+     * 마지막으로 찾은 패널 (주소와 크기). 저장해 두었다가 다음에는 검색 없이 바로 연결합니다.
+     * (Android 8.1 부터 화면이 꺼지면 조건 없는 검색이 막히기 때문입니다.)
+     */
+    @Volatile var lastSign: SignInfo? = prefs.getString("address", null)?.let {
+        SignInfo(it, prefs.getString("name", NAME_PREFIX)!!, prefs.getInt("width", DEFAULT_WIDTH), prefs.getInt("height", DEFAULT_HEIGHT))
+    }
         private set
 
-    /** 이름이 CoolLEDX 로 시작하는 패널을 찾습니다. */
-    fun scan(timeoutMs: Long = 10_000): SignInfo {
+    /** Android 11 이하는 위치(GPS)가 꺼져 있으면 블루투스 검색 결과가 오지 않습니다. */
+    fun locationBlocksScan(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return false
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return !(lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
+    }
+
+    private fun remember(sign: SignInfo) {
+        lastSign = sign
+        prefs.edit().putString("address", sign.address).putString("name", sign.name)
+            .putInt("width", sign.width).putInt("height", sign.height).apply()
+    }
+
+    /**
+     * 이름이 CoolLEDX 로 시작하는 패널을 찾습니다.
+     * 저장된 주소가 있으면 그 주소만 찾습니다(화면이 꺼져 있어도 검색되도록).
+     */
+    fun scan(timeoutMs: Long = 10_000, onlyKnown: Boolean = true): SignInfo {
         val ad = adapter ?: throw IllegalStateException("이 기기에 블루투스가 없습니다")
         if (!ad.isEnabled) throw IllegalStateException("블루투스가 꺼져 있습니다")
         val scanner = ad.bluetoothLeScanner ?: throw IllegalStateException("블루투스 스캔을 쓸 수 없습니다")
@@ -79,14 +104,20 @@ class CoolLedBle(private val context: Context) {
             }
         }
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(null, settings, cb)
+        val known = lastSign?.address
+        val filters = if (onlyKnown && known != null)
+            listOf(ScanFilter.Builder().setDeviceAddress(known).build()) else null
+        scanner.startScan(filters, settings, cb)
         try {
             latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         } finally {
             try { scanner.stopScan(cb) } catch (_: Exception) {}
         }
-        val sign = found ?: throw IllegalStateException("주변에서 CoolLEDX 패널을 찾지 못했습니다")
-        lastSign = sign
+        val sign = found ?: throw IllegalStateException(
+            if (locationBlocksScan()) "위치(GPS)가 꺼져 있어 패널을 찾을 수 없습니다. 위치를 켜 주세요"
+            else "주변에서 CoolLEDX 패널을 찾지 못했습니다"
+        )
+        remember(sign)
         return sign
     }
 
