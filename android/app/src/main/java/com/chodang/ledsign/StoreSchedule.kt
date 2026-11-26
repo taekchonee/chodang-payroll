@@ -5,10 +5,11 @@ import java.util.Calendar
 
 /** 간판에 띄우는 상태 */
 enum class StoreStatus(val label: String, val defaultText: String, val defaultColor: LedColor) {
-    OPEN("영업중", "영업중", LedColor.WHITE),
-    CLOSED("영업종료", "영업종료", LedColor.WHITE),
+    // 공백은 반 글자 간격 (CoolLED 앱에서 쓰던 표기 그대로)
+    OPEN("영업중", "영 업 중", LedColor.WHITE),
+    CLOSED("영업종료", "영업 종료", LedColor.WHITE),
     HOLIDAY("휴무", "월요일 휴무", LedColor.WHITE),
-    // | 로 나누면 패널이 "재료소진" → "조기마감" 을 번갈아 반복합니다.
+    // | 로 나누면 화면을 나눠, 패널이 "재료소진" → "조기마감" 을 한 화면씩 번갈아 보여줍니다.
     SOLDOUT("조기마감", "재료소진|조기마감", LedColor.WHITE),
 }
 

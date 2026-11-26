@@ -32,22 +32,16 @@ class SignController(context: Context) {
     @Volatile var lastPreview: Bitmap? = null
         private set
 
-    val fontPx: Float get() = prefs.getFloat("font_px", 14f)
-    val bold: Boolean get() = prefs.getBoolean("bold", false)
+    val fontPx: Float get() = prefs.getFloat("font_px", 16f)
+    val bold: Boolean get() = prefs.getBoolean("bold", true)
 
     /** 패널을 단 방향. 기본은 세로 */
     var orientation: Orientation
         get() = Orientation.parse(prefs.getString("orientation", null))
         set(v) = prefs.edit().putString("orientation", v.name).apply()
 
-    /** 번갈아 표시할 때 한 장면을 보여주는 시간에 해당하는 값 (패널 단위, 실측으로 조정) */
-    var animSpeed: Int
-        get() = prefs.getInt("anim_speed", 1500)
-        set(v) = prefs.edit().putInt("anim_speed", v).apply()
-
-    /** "재료소진|조기마감" → ["재료소진", "조기마감"]. 나눌 게 없으면 null */
-    private fun pages(text: String): List<String>? =
-        text.split('|').map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.size >= 2 }
+    /** 세로 패널이거나 | 로 나눈 문구는 96칸 화면 단위로 나눠 고정 모드로 보냅니다. */
+    private fun paged(req: ShowRequest) = orientation.vertical || req.text.contains('|')
 
     fun setFont(px: Float, bold: Boolean) {
         prefs.edit().putFloat("font_px", px).putBoolean("bold", bold).apply()
@@ -64,52 +58,42 @@ class SignController(context: Context) {
     /** 미리보기만 만듭니다(전송 안 함). */
     fun preview(req: ShowRequest): RenderResult {
         val (w, h) = signSize
-        pages(req.text)?.let { return TextRenderer.renderPages(it, req.color, w, h, fontPx, bold, orientation) }
-        val center = resolveMode(req, w, h).first == CoolLedProtocol.Mode.STATIC
-        return TextRenderer.render(req.text, req.color, w, h, fontPx, bold, center, orientation)
+        return render(req, w, h).second
     }
 
-    private fun resolveMode(req: ShowRequest, w: Int, h: Int): Pair<CoolLedProtocol.Mode, RenderResult?> {
-        val m = req.mode.lowercase()
-        if (m == "auto" || m.isBlank()) {
-            val r = TextRenderer.render(req.text, req.color, w, h, fontPx, bold, true, orientation)
-            return (if (r.fits) CoolLedProtocol.Mode.STATIC else CoolLedProtocol.Mode.LEFT) to r
-        }
-        val mode = CoolLedProtocol.Mode.entries.firstOrNull { it.name.equals(m, true) }
+    private fun parseMode(m: String): CoolLedProtocol.Mode? =
+        CoolLedProtocol.Mode.entries.firstOrNull { it.name.equals(m, true) }
             ?: when (m) {
                 "고정" -> CoolLedProtocol.Mode.STATIC
                 "왼쪽", "흐름" -> CoolLedProtocol.Mode.LEFT
                 "오른쪽" -> CoolLedProtocol.Mode.RIGHT
-                else -> CoolLedProtocol.Mode.STATIC
+                else -> null
             }
-        return mode to null
+
+    /** 보낼 방식과 그림을 정합니다. */
+    private fun render(req: ShowRequest, w: Int, h: Int): Pair<CoolLedProtocol.Mode, RenderResult> {
+        val chosen = parseMode(req.mode.lowercase().trim())
+        if (paged(req)) {
+            // 화면이 여러 개면 패널이 고정 모드에서 한 화면씩 넘겨 보여줍니다.
+            val r = TextRenderer.renderPaged(req.text, req.color, w, h, fontPx, bold, orientation)
+            return (chosen ?: CoolLedProtocol.Mode.STATIC) to r
+        }
+        if (chosen == null) {
+            val r = TextRenderer.renderLine(req.text, req.color, w, h, fontPx, bold, center = true)
+            if (r.fits) return CoolLedProtocol.Mode.STATIC to r
+            return CoolLedProtocol.Mode.LEFT to TextRenderer.renderLine(req.text, req.color, w, h, fontPx, bold, center = false)
+        }
+        return chosen to TextRenderer.renderLine(req.text, req.color, w, h, fontPx, bold,
+            center = chosen == CoolLedProtocol.Mode.STATIC)
     }
 
     /** 패널에 글자를 보냅니다. 끝날 때까지 기다리고 결과 문구를 돌려줍니다. */
     fun show(req: ShowRequest, timeoutSec: Long = 90): String = runJob("'${req.text}' 표시") {
-        // 패널 크기를 정확히 알기 위해 처음 한 번은 스캔합니다.
+        // 처음 한 번은 패널을 찾아 크기를 확인합니다.
         val sign = ble.signInfo()
         prefs.edit().putInt("width", sign.width).putInt("height", sign.height).apply()
 
-        val pageList = pages(req.text)
-        if (pageList != null) {
-            // 패널이 장면을 스스로 번갈아 반복합니다.
-            val anim = TextRenderer.renderPages(pageList, req.color, sign.width, sign.height, fontPx, bold, orientation)
-            val frames = CoolLedProtocol.chopUp(
-                CoolLedProtocol.animationPayload(pageList.size, animSpeed, anim.pixelBits),
-                CoolLedProtocol.CMD_ANIMATION,
-            ) + CoolLedProtocol.setOn(true)
-            ble.send(frames)
-            lastText = req.text
-            lastPreview = anim.preview
-            prefs.edit().putString("last_text", req.text).apply()
-            return@runJob
-        }
-
-        val (mode, autoRender) = resolveMode(req, sign.width, sign.height)
-        val render = if (autoRender != null && mode == CoolLedProtocol.Mode.STATIC) autoRender
-        else TextRenderer.render(req.text, req.color, sign.width, sign.height, fontPx, bold,
-            mode == CoolLedProtocol.Mode.STATIC, orientation)
+        val (mode, render) = render(req, sign.width, sign.height)
 
         val frames = mutableListOf<ByteArray>()
         frames += CoolLedProtocol.chopUp(

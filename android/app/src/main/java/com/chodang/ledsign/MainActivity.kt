@@ -33,7 +33,6 @@ class MainActivity : Activity() {
 
     private val modeLabels = listOf("자동" to "auto", "고정" to "static", "왼쪽으로 흐름" to "left", "오른쪽으로 흐름" to "right")
     private val fontSizes = listOf(12, 13, 14, 15, 16)
-    private val animSpeeds = listOf(500, 1000, 1500, 2000, 3000)
     private val dayLabels = listOf(
         Calendar.SUNDAY to "일", Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
         Calendar.THURSDAY to "목", Calendar.FRIDAY to "금", Calendar.SATURDAY to "토",
@@ -49,7 +48,6 @@ class MainActivity : Activity() {
     private lateinit var modeSpinner: Spinner
     private lateinit var fontSpinner: Spinner
     private lateinit var boldCheck: CheckBox
-    private lateinit var animSpinner: Spinner
     private lateinit var orientationSpinner: Spinner
     private lateinit var previewView: ImageView
     private val statusTextInputs = mutableMapOf<StoreStatus, EditText>()
@@ -139,7 +137,7 @@ class MainActivity : Activity() {
 
         // 문구와 색
         root.addView(title("상태별 문구와 색"))
-        root.addView(label("문구에 | 를 넣으면 나눠서 번갈아 표시합니다. 예) 재료소진|조기마감"))
+        root.addView(label("| 를 넣으면 화면을 나눠 한 화면씩 번갈아 보여줍니다. 예) 재료소진|조기마감"))
         StoreStatus.entries.forEach { s ->
             val input = EditText(this).apply { setText(schedule.text(s)); setSingleLine() }
             val color = spinner(LedColor.entries.map { it.label }).apply { setSelection(schedule.color(s).ordinal) }
@@ -161,20 +159,15 @@ class MainActivity : Activity() {
         root.addView(title("글자"))
         val signPrefs = getSharedPreferences("sign", Context.MODE_PRIVATE)
         fontSpinner = spinner(fontSizes.map { "${it}px" }).apply {
-            setSelection(fontSizes.indexOf(signPrefs.getFloat("font_px", 14f).toInt()).coerceAtLeast(0))
+            setSelection(fontSizes.indexOf(signPrefs.getFloat("font_px", 16f).toInt()).coerceAtLeast(0))
         }
-        boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = signPrefs.getBoolean("bold", false) }
+        boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = signPrefs.getBoolean("bold", true) }
         orientationSpinner = spinner(Orientation.entries.map { it.label }).apply {
             setSelection(Orientation.parse(signPrefs.getString("orientation", null)).ordinal)
         }
         root.addView(row(label("패널 방향"), orientationSpinner))
-        root.addView(label("세로로 단 패널은 글자를 위에서 아래로 쌓아 표시합니다(16px 기준 최대 6글자). 글자가 거꾸로 보이면 세로 A/B 를 바꿔 주세요."))
+        root.addView(label("세로 패널은 글자를 하나씩 눕혀 보냅니다(CoolLED 앱의 270° = 세로 A). 한 화면에 6글자, 공백은 반 글자 간격입니다."))
         root.addView(row(label("크기"), fontSpinner, boldCheck))
-        animSpinner = spinner(animSpeeds.map { "${it / 1000.0}초" }).apply {
-            setSelection(animSpeeds.indexOf(signPrefs.getInt("anim_speed", 1500)).coerceAtLeast(0))
-        }
-        root.addView(row(label("번갈아 표시 간격"), animSpinner))
-        root.addView(label("간격이 실제와 다르면 값을 바꿔 보내 보세요."))
         root.addView(row(button("이 설정으로 간판 다시 보내기") {
             controller?.let { applyFont(it) }
             onScheduleChanged()
@@ -251,7 +244,6 @@ class MainActivity : Activity() {
 
     private fun applyFont(c: SignController) {
         c.setFont(fontSizes[fontSpinner.selectedItemPosition].toFloat(), boldCheck.isChecked)
-        c.animSpeed = animSpeeds[animSpinner.selectedItemPosition]
         c.orientation = Orientation.entries[orientationSpinner.selectedItemPosition]
     }
 
@@ -261,7 +253,7 @@ class MainActivity : Activity() {
         applyFont(c)
         val r = c.preview(currentRequest(t))
         setPreview(r.preview)
-        toast(if (r.fits) "한 화면에 들어갑니다" else "패널보다 길어서 흐르게 표시됩니다")
+        toast(if (r.fits) "한 화면에 들어갑니다" else "한 화면을 넘어서 나눠 보여줍니다")
     }
 
     private fun runInBackground(job: (SignController) -> String) {
@@ -302,7 +294,7 @@ class MainActivity : Activity() {
     }
 
     private fun setPreview(bmp: Bitmap) {
-        val scale = if (bmp.height > bmp.width) 3 else 6
+        val scale = if (bmp.width > 150) 3 else 5
         previewView.setImageBitmap(Bitmap.createScaledBitmap(bmp, bmp.width * scale, bmp.height * scale, false))
     }
 

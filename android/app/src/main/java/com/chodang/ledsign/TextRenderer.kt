@@ -36,8 +36,8 @@ enum class LedColor(val label: String, val r: Boolean, val g: Boolean, val b: Bo
  */
 enum class Orientation(val label: String) {
     HORIZONTAL("가로"),
-    VERTICAL_A("세로 A"),
-    VERTICAL_B("세로 B");
+    VERTICAL_A("세로 A (270°)"),
+    VERTICAL_B("세로 B (90°)");
 
     val vertical: Boolean get() = this != HORIZONTAL
 
@@ -107,69 +107,117 @@ object TextRenderer {
     }
 
     /**
-     * 글자를 그려 패널용 비트로 바꿉니다.
-     *
-     * @param signWidth 패널 내부 폭 (96)
-     * @param signHeight 패널 내부 높이 (16)
-     * @param center 한 화면에 들어가면 가운데 정렬(고정 표시용)
-     * @param fixed 크기를 한 화면에 딱 맞춤(넘치면 잘림). 번갈아 표시 장면용
+     * 가로로 단 패널용: 글자를 한 줄로 그립니다. (길면 흐르게 보낼 때 사용)
+     * @param center 한 화면에 들어가면 가운데 정렬
      */
-    fun render(
-        text: String,
-        color: LedColor,
-        signWidth: Int,
-        signHeight: Int,
-        fontPx: Float,
-        bold: Boolean,
-        center: Boolean,
-        orientation: Orientation,
-        fixed: Boolean = false,
-    ): RenderResult =
-        if (orientation.vertical) renderVertical(text, color, signWidth, signHeight, fontPx, bold, center, orientation, fixed)
-        else renderHorizontal(text, color, signWidth, signHeight, fontPx, bold, center, fixed)
-
-    private fun renderHorizontal(
+    fun renderLine(
         text: String, color: LedColor, signWidth: Int, signHeight: Int,
-        fontPx: Float, bold: Boolean, center: Boolean, fixed: Boolean,
+        fontPx: Float, bold: Boolean, center: Boolean,
     ): RenderResult {
-        val paint = paint(fontPx, bold)
-        val textWidth = maxOf(1, ceil(paint.measureText(text)).toInt())
-        val fits = textWidth <= signWidth
-        val full = fixed || (center && fits)
-        val outWidth = if (full) signWidth else textWidth
-        val left = if (full) (signWidth - textWidth) / 2 else 0
-
-        val bounds = Rect()
-        paint.getTextBounds(text.ifEmpty { " " }, 0, maxOf(1, text.length), bounds)
-        val baseline = (signHeight - bounds.height()) / 2f - bounds.top
-
-        val mask = Bitmap.createBitmap(outWidth, signHeight, Bitmap.Config.ARGB_8888)
-        Canvas(mask).apply {
-            drawColor(Color.BLACK)
-            drawText(text, left.toFloat(), baseline, paint)
-        }
+        val mask = horizontalMask(text, signWidth, signHeight, fontPx, bold, if (center) signWidth else null)
+        val fits = mask.width <= signWidth
         val result = RenderResult(encode(mask, color), colorize(mask, color), fits)
         mask.recycle()
         return result
     }
 
-    /**
-     * 세로로 단 패널용: 한 글자씩 위→아래로 쌓아 그린 뒤 90° 돌립니다. (공백은 뺍니다)
-     * 글자 칸은 16×16 이라 세로 96칸에 6글자가 들어갑니다. 글자 크기를 14px 정도로 두면 글자 사이가 뜹니다.
-     */
-    private fun renderVertical(
-        text: String, color: LedColor, signWidth: Int, signHeight: Int,
-        fontPx: Float, bold: Boolean, center: Boolean, orientation: Orientation, fixed: Boolean,
-    ): RenderResult {
+    /** fixedWidth 가 있으면 그 폭에 가운데 정렬(넘치면 잘림), 없으면 글자 길이만큼 */
+    private fun horizontalMask(
+        text: String, signWidth: Int, signHeight: Int, fontPx: Float, bold: Boolean, fixedWidth: Int?,
+    ): Bitmap {
         val paint = paint(fontPx, bold)
-        val chars = text.filterNot { it.isWhitespace() }.map { it.toString() }.ifEmpty { listOf(" ") }
-        val cell = signHeight                  // 글자 칸은 패널 폭(16)과 같은 정사각형
-        val contentH = chars.size * cell
-        val fits = contentH <= signWidth
-        val full = fixed || (center && fits)
-        val physW = signHeight                 // 실제로 보이는 폭 (16)
-        val physH = if (full) signWidth else contentH  // 실제로 보이는 높이
-        val top = if (full) (signWidth - contentH) / 2 else 0
+        val textWidth = maxOf(1, ceil(paint.measureText(text)).toInt())
+        // 글자가 더 길면 글자 길이만큼 그립니다(자르는 건 호출하는 쪽에서).
+        val outWidth = if (fixedWidth != null && textWidth <= fixedWidth) fixedWidth else textWidth
+        val left = (outWidth - textWidth) / 2
+        val bounds = Rect()
+        paint.getTextBounds(text.ifEmpty { " " }, 0, maxOf(1, text.length), bounds)
+        val baseline = (signHeight - bounds.height()) / 2f - bounds.top
+        val mask = Bitmap.createBitmap(outWidth, signHeight, Bitmap.Config.ARGB_8888)
+        Canvas(mask).apply {
+            drawColor(Color.BLACK)
+            drawText(text, left.toFloat(), baseline, paint)
+        }
+        return mask
+    }
+
+    /**
+     * 화면(96칸) 단위로 나눠 그립니다. 모든 화면은 가운데 정렬입니다.
+     * - | 로 나눈 곳에서 화면을 나눕니다.
+     * - 세로 패널은 한 화면에 안 들어가면 글자 단위로 다음 화면으로 넘깁니다.
+     * 여러 화면을 이어 붙여 고정 모드로 보내면 패널이 한 화면씩 넘겨 보여줍니다.
+     */
+    fun renderPaged(
+        text: String, color: LedColor, signWidth: Int, signHeight: Int,
+        fontPx: Float, bold: Boolean, orientation: Orientation,
+    ): RenderResult {
+        val segments = text.split('|').map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(" ") }
+        val pageMasks = mutableListOf<Bitmap>()
+        for (seg in segments) {
+            if (orientation.vertical) {
+                splitVertical(seg, signWidth, signHeight).forEach { cells ->
+                    pageMasks += verticalPage(cells, signWidth, signHeight, fontPx, bold, orientation)
+                }
+            } else {
+                pageMasks += horizontalMask(seg, signWidth, signHeight, fontPx, bold, signWidth)
+                    .let { if (it.width == signWidth) it else Bitmap.createBitmap(it, (it.width - signWidth) / 2, 0, signWidth, signHeight) }
+            }
+        }
+        val all = Bitmap.createBitmap(signWidth * pageMasks.size, signHeight, Bitmap.Config.ARGB_8888)
+        Canvas(all).apply {
+            drawColor(Color.BLACK)
+            pageMasks.forEachIndexed { i, m -> drawBitmap(m, (i * signWidth).toFloat(), 0f, null) }
+        }
+        // 미리보기: CoolLED 앱처럼 패널 방향(가로 띠)으로, 화면 사이에 3칸 틈
+        val gap = 3
+        val preview = Bitmap.createBitmap(
+            pageMasks.size * signWidth + (pageMasks.size - 1) * gap, signHeight, Bitmap.Config.ARGB_8888)
+        Canvas(preview).apply {
+            drawColor(Color.BLACK)
+            pageMasks.forEachIndexed { i, m ->
+                drawBitmap(colorize(m, color), (i * (signWidth + gap)).toFloat(), 0f, null)
+            }
+        }
+        val result = RenderResult(encode(all, color), preview, pageMasks.size == 1)
+        all.recycle(); pageMasks.forEach { it.recycle() }
+        return result
+    }
+
+    /** 세로 칸 하나: 글자(16칸) 또는 공백(반 칸) */
+    private fun cellHeight(ch: String, cell: Int) = if (ch.isBlank()) cell / 2 else cell
+
+    /** 글자 단위로 한 화면(signWidth 칸)에 들어가게 나눕니다. 화면 앞뒤 공백은 뺍니다. */
+    private fun splitVertical(text: String, signWidth: Int, cell: Int): List<List<String>> {
+        val chars = text.map { it.toString() }
+        val pages = mutableListOf<MutableList<String>>()
+        var cur = mutableListOf<String>()
+        var used = 0
+        for (ch in chars) {
+            val h = cellHeight(ch, cell)
+            if (used + h > signWidth && cur.isNotEmpty()) {
+                pages += cur; cur = mutableListOf(); used = 0
+            }
+            if (cur.isEmpty() && ch.isBlank()) continue
+            cur += ch; used += h
+        }
+        if (cur.isNotEmpty()) pages += cur
+        return pages.map { p -> p.dropLastWhile { it.isBlank() } }.filter { it.isNotEmpty() }.ifEmpty { listOf(listOf(" ")) }
+    }
+
+    /**
+     * 세로로 단 패널의 한 화면: 글자를 위→아래로 쌓아 가운데 정렬로 그린 뒤 90° 돌립니다.
+     * 결과는 패널 방향(폭 signWidth × 높이 signHeight)입니다.
+     */
+    private fun verticalPage(
+        cells: List<String>, signWidth: Int, signHeight: Int,
+        fontPx: Float, bold: Boolean, orientation: Orientation,
+    ): Bitmap {
+        val paint = paint(fontPx, bold)
+        val cell = signHeight
+        val physW = signHeight      // 실제로 보이는 폭 (16)
+        val physH = signWidth       // 실제로 보이는 높이 (96)
+        val contentH = cells.sumOf { cellHeight(it, cell) }
+        var y = (physH - contentH) / 2
 
         // 모든 글자를 같은 기준선에 맞추려고 한글 한 글자로 높이를 잽니다.
         val ref = Rect()
@@ -178,64 +226,32 @@ object TextRenderer {
         val phys = Bitmap.createBitmap(physW, physH, Bitmap.Config.ARGB_8888)
         Canvas(phys).apply {
             drawColor(Color.BLACK)
-            chars.forEachIndexed { i, ch ->
-                val x = (physW - paint.measureText(ch)) / 2f
-                val baseline = top + i * cell + (cell - ref.height()) / 2f - ref.top
-                drawText(ch, x, baseline, paint)
+            for (ch in cells) {
+                val h = cellHeight(ch, cell)
+                if (!ch.isBlank()) {
+                    val x = (physW - paint.measureText(ch)) / 2f
+                    val baseline = y + (cell - ref.height()) / 2f - ref.top
+                    drawText(ch, x, baseline, paint)
+                }
+                y += h
             }
         }
 
-        // 패널 방향(가로 physH × 16)으로 돌립니다.
+        // 패널 방향으로 돌립니다.
         val mask = Bitmap.createBitmap(physH, physW, Bitmap.Config.ARGB_8888)
         for (lx in 0 until physH) for (ly in 0 until physW) {
             val px: Int
             val py: Int
             if (orientation == Orientation.VERTICAL_A) {
-                // 패널 왼쪽 끝이 위로 오도록 시계 방향으로 돌려 단 경우
+                // CoolLED 앱의 270° 와 같음: 패널 왼쪽 끝이 위로 오도록 단 경우
                 px = physW - 1 - ly; py = lx
             } else {
-                // 반시계 방향으로 돌려 단 경우
+                // CoolLED 앱의 90° 와 같음
                 px = ly; py = physH - 1 - lx
             }
             mask.setPixel(lx, ly, phys.getPixel(px, py))
         }
-        val result = RenderResult(encode(mask, color), colorize(phys, color), fits)
-        mask.recycle(); phys.recycle()
-        return result
-    }
-
-    /**
-     * 여러 장면을 한 화면 크기로 하나씩 그려 번갈아 표시(애니메이션)용으로 묶습니다.
-     * pixelBits 는 [모든 장면의 R] + [모든 장면의 G] + [모든 장면의 B] 순서입니다.
-     */
-    fun renderPages(
-        pages: List<String>,
-        color: LedColor,
-        signWidth: Int,
-        signHeight: Int,
-        fontPx: Float,
-        bold: Boolean,
-        orientation: Orientation,
-    ): RenderResult {
-        val rendered = pages.map { render(it, color, signWidth, signHeight, fontPx, bold, true, orientation, fixed = true) }
-        val plane = signWidth * signHeight / 8
-        val r = java.io.ByteArrayOutputStream()
-        val g = java.io.ByteArrayOutputStream()
-        val b = java.io.ByteArrayOutputStream()
-        rendered.forEach {
-            r.write(it.pixelBits, 0, plane)
-            g.write(it.pixelBits, plane, plane)
-            b.write(it.pixelBits, plane * 2, plane)
-        }
-        // 미리보기: 장면을 가로로 나란히 (사이 3칸)
-        val gap = 3
-        val pw = rendered.first().preview.width
-        val ph = rendered.first().preview.height
-        val preview = Bitmap.createBitmap(rendered.size * pw + (rendered.size - 1) * gap, ph, Bitmap.Config.ARGB_8888)
-        Canvas(preview).apply {
-            drawColor(Color.BLACK)
-            rendered.forEachIndexed { i, it -> drawBitmap(it.preview, (i * (pw + gap)).toFloat(), 0f, null) }
-        }
-        return RenderResult(r.toByteArray() + g.toByteArray() + b.toByteArray(), preview, rendered.all { it.fits })
+        phys.recycle()
+        return mask
     }
 }
