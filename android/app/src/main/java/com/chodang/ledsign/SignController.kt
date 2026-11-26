@@ -32,8 +32,13 @@ class SignController(context: Context) {
     @Volatile var lastPreview: Bitmap? = null
         private set
 
-    val fontPx: Float get() = prefs.getFloat("font_px", 16f)
-    val bold: Boolean get() = prefs.getBoolean("bold", true)
+    val fontPx: Float get() = prefs.getFloat("font_px", 14f)
+    val bold: Boolean get() = prefs.getBoolean("bold", false)
+
+    /** 패널을 단 방향. 기본은 세로 */
+    var orientation: Orientation
+        get() = Orientation.parse(prefs.getString("orientation", null))
+        set(v) = prefs.edit().putString("orientation", v.name).apply()
 
     /** 번갈아 표시할 때 한 장면을 보여주는 시간에 해당하는 값 (패널 단위, 실측으로 조정) */
     var animSpeed: Int
@@ -59,15 +64,15 @@ class SignController(context: Context) {
     /** 미리보기만 만듭니다(전송 안 함). */
     fun preview(req: ShowRequest): RenderResult {
         val (w, h) = signSize
-        pages(req.text)?.let { return TextRenderer.renderPages(it, req.color, w, h, fontPx, bold) }
+        pages(req.text)?.let { return TextRenderer.renderPages(it, req.color, w, h, fontPx, bold, orientation) }
         val center = resolveMode(req, w, h).first == CoolLedProtocol.Mode.STATIC
-        return TextRenderer.render(req.text, req.color, w, h, fontPx, bold, center)
+        return TextRenderer.render(req.text, req.color, w, h, fontPx, bold, center, orientation)
     }
 
     private fun resolveMode(req: ShowRequest, w: Int, h: Int): Pair<CoolLedProtocol.Mode, RenderResult?> {
         val m = req.mode.lowercase()
         if (m == "auto" || m.isBlank()) {
-            val r = TextRenderer.render(req.text, req.color, w, h, fontPx, bold, true)
+            val r = TextRenderer.render(req.text, req.color, w, h, fontPx, bold, true, orientation)
             return (if (r.fits) CoolLedProtocol.Mode.STATIC else CoolLedProtocol.Mode.LEFT) to r
         }
         val mode = CoolLedProtocol.Mode.entries.firstOrNull { it.name.equals(m, true) }
@@ -89,7 +94,7 @@ class SignController(context: Context) {
         val pageList = pages(req.text)
         if (pageList != null) {
             // 패널이 장면을 스스로 번갈아 반복합니다.
-            val anim = TextRenderer.renderPages(pageList, req.color, sign.width, sign.height, fontPx, bold)
+            val anim = TextRenderer.renderPages(pageList, req.color, sign.width, sign.height, fontPx, bold, orientation)
             val frames = CoolLedProtocol.chopUp(
                 CoolLedProtocol.animationPayload(pageList.size, animSpeed, anim.pixelBits),
                 CoolLedProtocol.CMD_ANIMATION,
@@ -104,7 +109,7 @@ class SignController(context: Context) {
         val (mode, autoRender) = resolveMode(req, sign.width, sign.height)
         val render = if (autoRender != null && mode == CoolLedProtocol.Mode.STATIC) autoRender
         else TextRenderer.render(req.text, req.color, sign.width, sign.height, fontPx, bold,
-            mode == CoolLedProtocol.Mode.STATIC)
+            mode == CoolLedProtocol.Mode.STATIC, orientation)
 
         val frames = mutableListOf<ByteArray>()
         frames += CoolLedProtocol.chopUp(
