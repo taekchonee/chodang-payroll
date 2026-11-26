@@ -3,10 +3,13 @@ package com.chodang.ledsign
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.TimePickerDialog
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -23,33 +26,37 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
+import java.util.Calendar
 
 class MainActivity : Activity() {
 
-    private data class Preset(val text: String, val color: LedColor)
-
-    private val presets = listOf(
-        Preset("영업중", LedColor.GREEN),
-        Preset("브레이크타임", LedColor.YELLOW),
-        Preset("영업종료", LedColor.RED),
-        Preset("월요일 휴무", LedColor.RED),
-        Preset("재료소진 조기마감", LedColor.RED),
-    )
     private val modeLabels = listOf("자동" to "auto", "고정" to "static", "왼쪽으로 흐름" to "left", "오른쪽으로 흐름" to "right")
     private val fontSizes = listOf(12, 13, 14, 15, 16)
+    private val dayLabels = listOf(
+        Calendar.SUNDAY to "일", Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
+        Calendar.THURSDAY to "목", Calendar.FRIDAY to "금", Calendar.SATURDAY to "토",
+    )
 
+    private lateinit var schedule: StoreSchedule
     private lateinit var statusView: TextView
+    private lateinit var soldOutButton: Button
+    private lateinit var closedTodayButton: Button
     private lateinit var textInput: EditText
     private lateinit var colorSpinner: Spinner
     private lateinit var modeSpinner: Spinner
     private lateinit var fontSpinner: Spinner
     private lateinit var boldCheck: CheckBox
     private lateinit var previewView: ImageView
+    private val statusTextInputs = mutableMapOf<StoreStatus, EditText>()
+    private val statusColorSpinners = mutableMapOf<StoreStatus, Spinner>()
 
-    private val controller: SignController? get() = LedService.instance?.controller
+    private val service: LedService? get() = LedService.instance
+    private val controller: SignController? get() = service?.controller
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        schedule = StoreSchedule(this)
         setContentView(buildUi())
         if (hasPermissions()) LedService.start(this) else requestPermissionsNow()
     }
@@ -69,7 +76,7 @@ class MainActivity : Activity() {
         }
 
         root.addView(title("LED 간판"))
-        statusView = TextView(this).apply { textSize = 15f; setTextIsSelectable(true) }
+        statusView = TextView(this).apply { textSize = 15f }
         root.addView(statusView)
         root.addView(row(
             button("새로고침") { refreshStatus() },
@@ -80,24 +87,88 @@ class MainActivity : Activity() {
             button("절전 예외 설정") { askIgnoreBatteryOptimization() },
         ))
 
-        root.addView(title("빠른 문구"))
-        presets.chunked(2).forEach { pair ->
-            root.addView(row(*pair.map { p ->
-                button(p.text) { send(ShowRequest(p.text, p.color)) }
-            }.toTypedArray()))
+        // 오늘만 바꾸기
+        root.addView(title("오늘만 바꾸기"))
+        soldOutButton = button("") {
+            schedule.soldOutToday = !schedule.soldOutToday
+            onScheduleChanged()
         }
+        closedTodayButton = button("") {
+            schedule.closedToday = !schedule.closedToday
+            onScheduleChanged()
+        }
+        root.addView(row(soldOutButton, closedTodayButton))
+        root.addView(row(button("시간표대로 다시 맞추기") {
+            schedule.soldOutToday = false
+            schedule.closedToday = false
+            onScheduleChanged()
+        }))
 
-        root.addView(title("직접 입력"))
+        // 시간표
+        root.addView(title("영업 시간표"))
+        root.addView(CheckBox(this).apply {
+            text = "시간표대로 자동 전환"
+            isChecked = schedule.autoEnabled
+            setOnCheckedChangeListener { _, on -> schedule.autoEnabled = on; onScheduleChanged() }
+        })
+        root.addView(row(
+            label("오픈"), timeButton({ schedule.openMin }) { schedule.openMin = it },
+            label("마감"), timeButton({ schedule.closeMin }) { schedule.closeMin = it },
+        ))
+        root.addView(row(
+            CheckBox(this).apply {
+                text = "브레이크"
+                isChecked = schedule.useBreak
+                setOnCheckedChangeListener { _, on -> schedule.useBreak = on; onScheduleChanged() }
+            },
+            timeButton({ schedule.breakStartMin }) { schedule.breakStartMin = it },
+            label(" ~ "),
+            timeButton({ schedule.breakEndMin }) { schedule.breakEndMin = it },
+        ))
+        root.addView(label("정기 휴무 요일"))
+        root.addView(row(*dayLabels.map { (day, name) ->
+            CheckBox(this).apply {
+                text = name
+                isChecked = schedule.isHolidayDay(day)
+                setOnCheckedChangeListener { _, on -> schedule.setHolidayDay(day, on); onScheduleChanged() }
+            }
+        }.toTypedArray()))
+
+        // 문구와 색
+        root.addView(title("상태별 문구와 색"))
+        StoreStatus.entries.forEach { s ->
+            val input = EditText(this).apply { setText(schedule.text(s)); setSingleLine() }
+            val color = spinner(LedColor.entries.map { it.label }).apply { setSelection(schedule.color(s).ordinal) }
+            statusTextInputs[s] = input
+            statusColorSpinners[s] = color
+            root.addView(row(label(s.label).apply { minWidth = dp(90) }, input, color))
+        }
+        root.addView(row(button("문구 저장") {
+            StoreStatus.entries.forEach { s ->
+                val t = statusTextInputs[s]!!.text.toString().trim()
+                if (t.isNotEmpty()) schedule.setText(s, t)
+                schedule.setColor(s, LedColor.entries[statusColorSpinners[s]!!.selectedItemPosition])
+            }
+            toast("저장했습니다")
+            onScheduleChanged()
+        }))
+
+        // 글자 크기
+        root.addView(title("글자"))
+        val signPrefs = getSharedPreferences("sign", Context.MODE_PRIVATE)
+        fontSpinner = spinner(fontSizes.map { "${it}px" }).apply {
+            setSelection(fontSizes.indexOf(signPrefs.getFloat("font_px", 16f).toInt()).coerceAtLeast(0))
+        }
+        boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = signPrefs.getBoolean("bold", true) }
+        root.addView(row(label("크기"), fontSpinner, boldCheck))
+
+        // 직접 보내기
+        root.addView(title("직접 보내기"))
         textInput = EditText(this).apply { hint = "간판에 띄울 문구"; setSingleLine() }
         root.addView(textInput)
-        colorSpinner = spinner(LedColor.entries.map { it.label })
-        colorSpinner.setSelection(LedColor.GREEN.ordinal)
+        colorSpinner = spinner(LedColor.entries.map { it.label }).apply { setSelection(LedColor.GREEN.ordinal) }
         modeSpinner = spinner(modeLabels.map { it.first })
         root.addView(row(label("색"), colorSpinner, label("방식"), modeSpinner))
-
-        fontSpinner = spinner(fontSizes.map { "${it}px" })
-        boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = true }
-        root.addView(row(label("글자 크기"), fontSpinner, boldCheck))
 
         previewView = ImageView(this).apply {
             setBackgroundColor(Color.rgb(25, 25, 25))
@@ -112,9 +183,10 @@ class MainActivity : Activity() {
             button("미리보기") { showPreview() },
             button("간판에 보내기") {
                 val t = textInput.text.toString().trim()
-                if (t.isNotEmpty()) send(currentRequest(t))
+                if (t.isNotEmpty()) runInBackground { applyFont(it); it.show(currentRequest(t)) }
             },
         ))
+        root.addView(label("직접 보낸 문구는 다음 시간표 전환 때까지 그대로 유지됩니다."))
 
         root.addView(title("패널"))
         root.addView(row(
@@ -122,7 +194,35 @@ class MainActivity : Activity() {
             button("끄기") { runInBackground { it.power(false) } },
         ))
 
+        updateTodayButtons()
         return ScrollView(this).apply { addView(root) }
+    }
+
+    private fun onScheduleChanged() {
+        updateTodayButtons()
+        controller?.let { applyFont(it) }
+        service?.scheduler?.kick(forceResend = true)
+        statusView.postDelayed({ refreshStatus() }, 300)
+        statusView.postDelayed({ refreshStatus() }, 8000)
+    }
+
+    private fun updateTodayButtons() {
+        soldOutButton.text = if (schedule.soldOutToday) "조기마감 취소" else "재료소진 조기마감"
+        closedTodayButton.text = if (schedule.closedToday) "임시 휴무 취소" else "오늘 임시 휴무"
+    }
+
+    private fun timeButton(get: () -> Int, set: (Int) -> Unit): Button {
+        val b = Button(this)
+        b.text = StoreSchedule.fmt(get())
+        b.setOnClickListener {
+            val m = get()
+            TimePickerDialog(this, { _, h, min ->
+                set(h * 60 + min)
+                b.text = StoreSchedule.fmt(h * 60 + min)
+                onScheduleChanged()
+            }, m / 60, m % 60, true).show()
+        }
+        return b
     }
 
     private fun currentRequest(text: String) = ShowRequest(
@@ -136,56 +236,46 @@ class MainActivity : Activity() {
     }
 
     private fun showPreview() {
-        val c = controller ?: return toastStatus("서비스가 아직 시작되지 않았습니다. 권한을 허용해 주세요.")
-        val t = textInput.text.toString().trim().ifEmpty { "영업중" }
+        val c = controller ?: return toast("서비스가 아직 시작되지 않았습니다. 권한을 허용해 주세요.")
+        val t = textInput.text.toString().trim().ifEmpty { schedule.text(schedule.target()) }
         applyFont(c)
         val r = c.preview(currentRequest(t))
         setPreview(r.preview)
-        toastStatus(if (r.fits) "한 화면에 들어갑니다" else "패널보다 길어서 흐르게 표시됩니다")
-    }
-
-    private fun send(req: ShowRequest) {
-        runInBackground {
-            applyFont(it)
-            it.show(req)
-        }
+        toast(if (r.fits) "한 화면에 들어갑니다" else "패널보다 길어서 흐르게 표시됩니다")
     }
 
     private fun runInBackground(job: (SignController) -> String) {
-        val c = controller ?: return toastStatus("서비스가 아직 시작되지 않았습니다. 권한을 허용해 주세요.")
+        val c = controller ?: return toast("서비스가 아직 시작되지 않았습니다. 권한을 허용해 주세요.")
         statusView.text = "보내는 중…"
         Thread {
             val msg = try { job(c) } catch (e: Exception) { "실패: ${e.message}" }
             runOnUiThread {
                 refreshStatus()
                 c.lastPreview?.let { setPreview(it) }
-                toastStatus(msg)
+                toast(msg)
             }
         }.start()
     }
 
     @SuppressLint("SetTextI18n")
     private fun refreshStatus() {
-        val svc = LedService.instance
+        val svc = service
         val c = svc?.controller
-        val ip = LedService.localIp() ?: "(네트워크 없음)"
         val (w, h) = c?.signSize ?: (CoolLedBle.DEFAULT_WIDTH to CoolLedBle.DEFAULT_HEIGHT)
+        val target = schedule.target()
         statusView.text = buildString {
-            appendLine("서비스: " + when {
-                svc == null -> "꺼짐"
-                svc.serverError != null -> "웹 서버 오류 (${svc.serverError})"
-                else -> "실행 중"
-            })
-            appendLine("HA 주소: http://$ip:${LedService.PORT}")
-            appendLine("접속 키: ${LedService.accessKey(this@MainActivity)}")
+            appendLine("서비스: " + if (svc == null) "꺼짐 (권한을 허용해 주세요)" else "실행 중")
             appendLine("패널: ${c?.signName ?: "아직 못 찾음"} (${w}×${h})")
-            appendLine("현재 문구: ${c?.lastText ?: "-"}")
-            append("최근 결과: ${c?.lastStatus ?: "-"}")
+            appendLine("지금 시간표: ${target.label}" + if (schedule.autoEnabled) "" else " (자동 전환 꺼짐)")
+            appendLine("간판 문구: ${c?.lastText ?: "-"}")
+            appendLine("최근 결과: ${c?.lastStatus ?: "-"}")
+            append("자동 전환: ${svc?.scheduler?.lastMessage ?: "-"}")
         }
+        updateTodayButtons()
     }
 
-    private fun toastStatus(msg: String) {
-        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }
 
     private fun setPreview(bmp: Bitmap) {
@@ -212,7 +302,7 @@ class MainActivity : Activity() {
         .all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun requestPermissionsNow() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) requestPermissions(neededPermissions(), 1)
+        requestPermissions(neededPermissions(), 1)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -221,7 +311,7 @@ class MainActivity : Activity() {
             LedService.start(this)
             statusView.postDelayed({ refreshStatus() }, 500)
         } else {
-            toastStatus("블루투스 권한이 있어야 간판을 바꿀 수 있습니다")
+            toast("블루투스 권한이 있어야 간판을 바꿀 수 있습니다")
         }
     }
 
@@ -229,7 +319,7 @@ class MainActivity : Activity() {
     private fun askIgnoreBatteryOptimization() {
         val pm = getSystemService(PowerManager::class.java)
         if (pm.isIgnoringBatteryOptimizations(packageName)) {
-            toastStatus("이미 절전 예외로 설정되어 있습니다")
+            toast("이미 절전 예외로 설정되어 있습니다")
             return
         }
         try {
@@ -245,8 +335,8 @@ class MainActivity : Activity() {
 
     private fun title(t: String) = TextView(this).apply {
         text = t; textSize = 20f
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, dp(16), 0, dp(8))
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(0, dp(20), 0, dp(8))
     }
 
     private fun label(t: String) = TextView(this).apply { text = t; setPadding(0, 0, dp(8), 0) }
@@ -264,7 +354,7 @@ class MainActivity : Activity() {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         views.forEach { v ->
-            val weight = if (v is Button || v is Spinner) 1f else 0f
+            val weight = if (v is Button || v is Spinner || v is EditText) 1f else 0f
             addView(v, LinearLayout.LayoutParams(
                 if (weight > 0) 0 else LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT, weight
