@@ -53,6 +53,8 @@ class RenderResult(
     val preview: Bitmap,
     /** 글자가 한 화면 안에 다 들어가는지 */
     val fits: Boolean,
+    /** 손님에게 실제로 보이는 모습 (세로 패널이면 세로 화면들을 나란히) */
+    val signPreview: Bitmap = preview,
 )
 
 object TextRenderer {
@@ -204,9 +206,35 @@ object TextRenderer {
                 drawBitmap(colorize(m, color), (i * (signWidth + gap)).toFloat(), 0f, null)
             }
         }
-        val result = RenderResult(encode(all, color), preview, pageMasks.size == 1)
+        val signPreview = if (orientation.vertical) {
+            val pw = signHeight; val ph = signWidth; val g = 4
+            Bitmap.createBitmap(pageMasks.size * pw + (pageMasks.size - 1) * g, ph, Bitmap.Config.ARGB_8888).also { bmp ->
+                Canvas(bmp).apply {
+                    drawColor(Color.BLACK)
+                    pageMasks.forEachIndexed { i, m ->
+                        drawBitmap(colorize(unrotate(m, orientation), color), (i * (pw + g)).toFloat(), 0f, null)
+                    }
+                }
+            }
+        } else preview
+        val result = RenderResult(encode(all, color), preview, pageMasks.size == 1, signPreview)
         all.recycle(); pageMasks.forEach { it.recycle() }
         return result
+    }
+
+    /** 패널 방향 그림을 실제로 보이는 세로 방향으로 되돌립니다(미리보기용). */
+    private fun unrotate(mask: Bitmap, orientation: Orientation): Bitmap {
+        val physW = mask.height
+        val physH = mask.width
+        val out = Bitmap.createBitmap(physW, physH, Bitmap.Config.ARGB_8888)
+        for (lx in 0 until physH) for (ly in 0 until physW) {
+            val px: Int
+            val py: Int
+            if (orientation == Orientation.VERTICAL_A) { px = physW - 1 - ly; py = lx }
+            else { px = ly; py = physH - 1 - lx }
+            out.setPixel(px, py, mask.getPixel(lx, ly))
+        }
+        return out
     }
 
     /** 세로 칸 하나: 글자(16칸) 또는 공백(반 칸) */
@@ -234,6 +262,28 @@ object TextRenderer {
      * 세로로 단 패널의 한 화면: 글자를 위→아래로 쌓아 가운데 정렬로 그린 뒤 90° 돌립니다.
      * 결과는 패널 방향(폭 signWidth × 높이 signHeight)입니다.
      */
+    private const val CHAR_GAP = 2     // 글자 사이 틈 (칸)
+    private const val SPACE_GAP = 6    // 공백 한 개의 틈 (칸)
+    private const val MAX_STRETCH = 2f // 글자를 길이 방향으로 최대 몇 배까지 늘릴지
+
+    /** 16×16 칸에 글자 하나를 그립니다(흑백). */
+    private fun glyphBitmap(ch: String, paint: Paint, bold: Boolean, cell: Int): Bitmap {
+        val g = Bitmap.createBitmap(cell, cell, Bitmap.Config.ARGB_8888)
+        Canvas(g).apply {
+            drawColor(Color.BLACK)
+            val w = paint.measureText(ch) + if (bold) 1 else 0
+            val x = Math.round((cell - w) / 2f).toFloat()
+            drawGlyphs(ch, x, baselineIn(paint, 0f, cell), paint, bold)
+        }
+        return g
+    }
+
+    /**
+     * 세로로 단 패널의 한 화면.
+     * 글자를 위→아래로 쌓되, 패널 길이(96칸)를 꽉 채우도록 글자를 길이 방향으로 늘립니다.
+     * (3글자는 2배, 4글자는 약 1.5배 …) 늘릴 때는 도트를 그대로 복제해 흐려지지 않습니다.
+     * 결과는 패널 방향(폭 signWidth × 높이 signHeight)으로 돌려서 돌려줍니다.
+     */
     private fun verticalPage(
         cells: List<String>, signWidth: Int, signHeight: Int,
         fontPx: Float, bold: Boolean, orientation: Orientation,
@@ -242,22 +292,45 @@ object TextRenderer {
         val cell = signHeight
         val physW = signHeight      // 실제로 보이는 폭 (16)
         val physH = signWidth       // 실제로 보이는 높이 (96)
-        val contentH = cells.sumOf { cellHeight(it, cell) }
-        var y = (physH - contentH) / 2
+
+        val glyphs = cells.filter { it.isNotBlank() }.distinct().associateWith { glyphBitmap(it, paint, bold, cell) }
+
+        // 모든 글자의 잉크가 있는 줄 범위(공통)를 구해 위아래 빈 줄을 잘라냅니다.
+        var inkTop = cell
+        var inkBottom = -1
+        for (g in glyphs.values) for (y in 0 until cell) for (x in 0 until cell) {
+            if (lit(g.getPixel(x, y))) { if (y < inkTop) inkTop = y; if (y > inkBottom) inkBottom = y }
+        }
+        if (inkBottom < inkTop) { inkTop = 0; inkBottom = cell - 1 }
+        val inkH = inkBottom - inkTop + 1
+
+        val n = cells.count { it.isNotBlank() }
+        val spaces = cells.count { it.isBlank() }
+        var gaps = 0
+        for (i in 1 until cells.size) if (cells[i].isNotBlank() && cells[i - 1].isNotBlank()) gaps += CHAR_GAP
+        val h = if (n == 0) inkH else minOf(
+            (physH - spaces * SPACE_GAP - gaps) / n,
+            (inkH * MAX_STRETCH).toInt(),
+        ).coerceAtLeast(1)
+        val total = n * h + spaces * SPACE_GAP + gaps
 
         val phys = Bitmap.createBitmap(physW, physH, Bitmap.Config.ARGB_8888)
         Canvas(phys).apply {
             drawColor(Color.BLACK)
+            var y = (physH - total) / 2
+            var prev: String? = null
             for (ch in cells) {
-                val h = cellHeight(ch, cell)
-                if (!ch.isBlank()) {
-                    val w = paint.measureText(ch) + if (bold) 1 else 0
-                    val x = Math.round((physW - w) / 2f).toFloat()
-                    drawGlyphs(ch, x, baselineIn(paint, y.toFloat(), cell), paint, bold)
-                }
+                if (ch.isBlank()) { y += SPACE_GAP; prev = ch; continue }
+                if (prev != null && prev.isNotBlank()) y += CHAR_GAP
+                val src = Bitmap.createBitmap(glyphs.getValue(ch), 0, inkTop, cell, inkH)
+                val stretched = Bitmap.createScaledBitmap(src, physW, h, false)
+                drawBitmap(stretched, 0f, y.toFloat(), null)
+                stretched.recycle(); src.recycle()
                 y += h
+                prev = ch
             }
         }
+        glyphs.values.forEach { it.recycle() }
 
         // 패널 방향으로 돌립니다.
         val mask = Bitmap.createBitmap(physH, physW, Bitmap.Config.ARGB_8888)

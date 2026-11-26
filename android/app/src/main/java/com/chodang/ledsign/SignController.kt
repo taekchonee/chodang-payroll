@@ -105,7 +105,7 @@ class SignController(context: Context) {
 
         ble.send(frames)
         lastText = req.text
-        lastPreview = render.preview
+        lastPreview = render.signPreview
         prefs.edit().putString("last_text", req.text).apply()
     }.get(timeoutSec, TimeUnit.SECONDS)
 

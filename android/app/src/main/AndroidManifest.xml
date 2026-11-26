@@ -21,6 +21,7 @@
     <application
         android:allowBackup="false"
         android:label="LED 간판"
+        android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"
         android:supportsRtl="false">
 
         <activity
