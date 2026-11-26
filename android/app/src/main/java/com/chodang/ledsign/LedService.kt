@@ -37,6 +37,7 @@ class LedService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        TextRenderer.loadFont(this)
         controller = SignController(this)
         schedule = StoreSchedule(this)
         scheduler = AutoScheduler(schedule, controller)

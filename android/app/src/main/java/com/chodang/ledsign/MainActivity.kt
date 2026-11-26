@@ -32,7 +32,6 @@ import java.util.Calendar
 class MainActivity : Activity() {
 
     private val modeLabels = listOf("자동" to "auto", "고정" to "static", "왼쪽으로 흐름" to "left", "오른쪽으로 흐름" to "right")
-    private val fontSizes = listOf(12, 13, 14, 15, 16)
     private val dayLabels = listOf(
         Calendar.SUNDAY to "일", Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
         Calendar.THURSDAY to "목", Calendar.FRIDAY to "금", Calendar.SATURDAY to "토",
@@ -46,7 +45,6 @@ class MainActivity : Activity() {
     private lateinit var textInput: EditText
     private lateinit var colorSpinner: Spinner
     private lateinit var modeSpinner: Spinner
-    private lateinit var fontSpinner: Spinner
     private lateinit var boldCheck: CheckBox
     private lateinit var orientationSpinner: Spinner
     private lateinit var previewView: ImageView
@@ -58,6 +56,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TextRenderer.loadFont(this)
         schedule = StoreSchedule(this)
         setContentView(buildUi())
         if (hasPermissions()) LedService.start(this) else requestPermissionsNow()
@@ -158,16 +157,13 @@ class MainActivity : Activity() {
         // 글자 크기
         root.addView(title("글자"))
         val signPrefs = getSharedPreferences("sign", Context.MODE_PRIVATE)
-        fontSpinner = spinner(fontSizes.map { "${it}px" }).apply {
-            setSelection(fontSizes.indexOf(signPrefs.getFloat("font_px", 16f).toInt()).coerceAtLeast(0))
-        }
         boldCheck = CheckBox(this).apply { text = "굵게"; isChecked = signPrefs.getBoolean("bold", true) }
         orientationSpinner = spinner(Orientation.entries.map { it.label }).apply {
             setSelection(Orientation.parse(signPrefs.getString("orientation", null)).ordinal)
         }
         root.addView(row(label("패널 방향"), orientationSpinner))
         root.addView(label("세로 패널은 글자를 하나씩 눕혀 보냅니다(CoolLED 앱의 270° = 세로 A). 한 화면에 6글자, 공백은 반 글자 간격입니다."))
-        root.addView(row(label("크기"), fontSpinner, boldCheck))
+        root.addView(row(label("글꼴: Neo둥근모 16px"), boldCheck))
         root.addView(row(button("이 설정으로 간판 다시 보내기") {
             controller?.let { applyFont(it) }
             onScheduleChanged()
@@ -243,7 +239,7 @@ class MainActivity : Activity() {
     )
 
     private fun applyFont(c: SignController) {
-        c.setFont(fontSizes[fontSpinner.selectedItemPosition].toFloat(), boldCheck.isChecked)
+        c.setFont(16f, boldCheck.isChecked)
         c.orientation = Orientation.entries[orientationSpinner.selectedItemPosition]
     }
 

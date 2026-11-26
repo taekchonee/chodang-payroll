@@ -1,10 +1,10 @@
 package com.chodang.ledsign
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.Typeface
 import kotlin.math.ceil
 
@@ -59,11 +59,39 @@ object TextRenderer {
 
     private val OFF_COLOR = Color.rgb(25, 25, 25)
 
-    private fun paint(fontPx: Float, bold: Boolean) = Paint().apply {
+    /**
+     * Neo둥근모: 16×16 칸에 맞춘 한글 도트 글꼴 (OFL-1.1, assets/fonts/neodgm-LICENSE.txt).
+     * CoolLED 앱처럼 글자가 칸을 꽉 채우고 획이 1칸으로 반듯하게 찍힙니다.
+     * 16px(또는 32px 등 16의 배수)에서 가장 깨끗합니다.
+     */
+    @Volatile private var pixelFont: Typeface = Typeface.DEFAULT
+
+    fun loadFont(context: Context) {
+        if (pixelFont != Typeface.DEFAULT) return
+        pixelFont = try {
+            Typeface.createFromAsset(context.assets, "fonts/neodgm.ttf")
+        } catch (_: Exception) {
+            Typeface.DEFAULT
+        }
+    }
+
+    private fun paint(fontPx: Float) = Paint().apply {
         isAntiAlias = false
         textSize = fontPx
-        typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        typeface = pixelFont
         color = Color.WHITE
+    }
+
+    /** 굵게: 같은 글자를 오른쪽으로 1칸 밀어 한 번 더 찍습니다(가로획은 그대로, 세로획이 2칸). */
+    private fun Canvas.drawGlyphs(text: String, x: Float, baseline: Float, paint: Paint, bold: Boolean) {
+        drawText(text, x, baseline, paint)
+        if (bold) drawText(text, x + 1f, baseline, paint)
+    }
+
+    /** 글꼴 높이(어센트+디센트)를 칸 높이 안에 가운데 맞춘 기준선 */
+    private fun baselineIn(paint: Paint, top: Float, height: Int): Float {
+        val fm = paint.fontMetrics
+        return top + (height - (fm.descent - fm.ascent)) / 2f - fm.ascent
     }
 
     private fun lit(px: Int) = (Color.red(px) + Color.green(px) + Color.blue(px)) / 3 > 127
@@ -125,18 +153,16 @@ object TextRenderer {
     private fun horizontalMask(
         text: String, signWidth: Int, signHeight: Int, fontPx: Float, bold: Boolean, fixedWidth: Int?,
     ): Bitmap {
-        val paint = paint(fontPx, bold)
-        val textWidth = maxOf(1, ceil(paint.measureText(text)).toInt())
+        val paint = paint(fontPx)
+        val textWidth = maxOf(1, ceil(paint.measureText(text)).toInt() + if (bold) 1 else 0)
         // 글자가 더 길면 글자 길이만큼 그립니다(자르는 건 호출하는 쪽에서).
         val outWidth = if (fixedWidth != null && textWidth <= fixedWidth) fixedWidth else textWidth
         val left = (outWidth - textWidth) / 2
-        val bounds = Rect()
-        paint.getTextBounds(text.ifEmpty { " " }, 0, maxOf(1, text.length), bounds)
-        val baseline = (signHeight - bounds.height()) / 2f - bounds.top
+        val baseline = baselineIn(paint, 0f, signHeight)
         val mask = Bitmap.createBitmap(outWidth, signHeight, Bitmap.Config.ARGB_8888)
         Canvas(mask).apply {
             drawColor(Color.BLACK)
-            drawText(text, left.toFloat(), baseline, paint)
+            drawGlyphs(text, left.toFloat(), baseline, paint, bold)
         }
         return mask
     }
@@ -212,16 +238,12 @@ object TextRenderer {
         cells: List<String>, signWidth: Int, signHeight: Int,
         fontPx: Float, bold: Boolean, orientation: Orientation,
     ): Bitmap {
-        val paint = paint(fontPx, bold)
+        val paint = paint(fontPx)
         val cell = signHeight
         val physW = signHeight      // 실제로 보이는 폭 (16)
         val physH = signWidth       // 실제로 보이는 높이 (96)
         val contentH = cells.sumOf { cellHeight(it, cell) }
         var y = (physH - contentH) / 2
-
-        // 모든 글자를 같은 기준선에 맞추려고 한글 한 글자로 높이를 잽니다.
-        val ref = Rect()
-        paint.getTextBounds("한", 0, 1, ref)
 
         val phys = Bitmap.createBitmap(physW, physH, Bitmap.Config.ARGB_8888)
         Canvas(phys).apply {
@@ -229,9 +251,9 @@ object TextRenderer {
             for (ch in cells) {
                 val h = cellHeight(ch, cell)
                 if (!ch.isBlank()) {
-                    val x = (physW - paint.measureText(ch)) / 2f
-                    val baseline = y + (cell - ref.height()) / 2f - ref.top
-                    drawText(ch, x, baseline, paint)
+                    val w = paint.measureText(ch) + if (bold) 1 else 0
+                    val x = Math.round((physW - w) / 2f).toFloat()
+                    drawGlyphs(ch, x, baselineIn(paint, y.toFloat(), cell), paint, bold)
                 }
                 y += h
             }

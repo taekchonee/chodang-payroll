@@ -45,5 +45,7 @@
 
 ## 만든 방식
 
+글자는 16×16 한글 도트 글꼴 [Neo둥근모](https://neodgm.dalgona.dev/) (OFL-1.1, `android/app/src/main/assets/fonts/neodgm-LICENSE.txt`)로 그립니다. CoolLED 앱처럼 글자가 16칸을 채우고, 굵게는 획을 1칸 더 찍습니다.
+
 패널 통신 방식은 공개 드라이버 [coolledx](https://github.com/UpDryTwist/coolledx-driver) (MIT)를 코틀린으로 옮겼습니다.
 APK는 고정된 공개 디버그 키로 서명합니다. 업데이트 설치가 가능하도록 하기 위한 것이며, 이 저장소의 릴리스에서만 받아 설치하세요.
