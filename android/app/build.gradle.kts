@@ -11,8 +11,8 @@ android {
         applicationId = "com.chodang.ledsign"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     // 업데이트 설치가 되도록 항상 같은 키로 서명합니다 (공개 디버그용 키).

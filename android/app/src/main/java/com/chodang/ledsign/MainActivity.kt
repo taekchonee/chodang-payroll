@@ -138,6 +138,11 @@ class MainActivity : Activity() {
                 setOnCheckedChangeListener { _, on -> schedule.setHolidayDay(day, on); onScheduleChanged() }
             }
         }.toTypedArray()))
+        root.addView(CheckBox(this).apply {
+            text = "휴무 전날 마감 후부터 휴무 다음 날 오픈 전까지 휴무 문구 표시"
+            isChecked = schedule.holidayAroundClosed
+            setOnCheckedChangeListener { _, on -> schedule.holidayAroundClosed = on; onScheduleChanged() }
+        })
 
         // 문구와 색
         root.addView(title("상태별 문구와 색"))

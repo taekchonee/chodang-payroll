@@ -25,7 +25,7 @@ class StoreSchedule(context: Context) {
 
     /** 하루 중 분 단위 (예: 11:00 → 660) */
     var openMin: Int
-        get() = prefs.getInt("open", 11 * 60)
+        get() = prefs.getInt("open", 9 * 60)
         set(v) = prefs.edit().putInt("open", v).apply()
     var breakStartMin: Int
         get() = prefs.getInt("break_start", 15 * 60)
@@ -34,11 +34,16 @@ class StoreSchedule(context: Context) {
         get() = prefs.getInt("break_end", 17 * 60)
         set(v) = prefs.edit().putInt("break_end", v).apply()
     var closeMin: Int
-        get() = prefs.getInt("close", 21 * 60)
+        get() = prefs.getInt("close", 14 * 60 + 30)
         set(v) = prefs.edit().putInt("close", v).apply()
     var useBreak: Boolean
-        get() = prefs.getBoolean("use_break", true)
+        get() = prefs.getBoolean("use_break", false)
         set(v) = prefs.edit().putBoolean("use_break", v).apply()
+
+    /** 정기 휴무 전날 마감 후 ~ 휴무 다음 날 오픈 전에도 휴무 문구를 띄웁니다. */
+    var holidayAroundClosed: Boolean
+        get() = prefs.getBoolean("holiday_around", true)
+        set(v) = prefs.edit().putBoolean("holiday_around", v).apply()
 
     /** 정기 휴무 요일 (Calendar.SUNDAY=1 … SATURDAY=7). 기본은 월요일. */
     fun isHolidayDay(day: Int) = prefs.getBoolean("holiday_$day", day == Calendar.MONDAY)
@@ -67,8 +72,14 @@ class StoreSchedule(context: Context) {
         val close = closeMin
         // 자정을 넘겨 마감하는 경우(예: 11:00~01:00)도 처리
         val inBusinessHours = if (close > open) now in open until close else now >= open || now < close
+        // 마감 후 시간이 오픈 전(새벽)인지, 마감 뒤(저녁)인지
+        val beforeOpen = if (close > open) now < open else now in close until open
+        val prevDay = if (day == Calendar.SUNDAY) Calendar.SATURDAY else day - 1
+        val nextDay = if (day == Calendar.SATURDAY) Calendar.SUNDAY else day + 1
         return when {
             closedToday || isHolidayDay(day) -> StoreStatus.HOLIDAY
+            !inBusinessHours && holidayAroundClosed &&
+                ((beforeOpen && isHolidayDay(prevDay)) || (!beforeOpen && isHolidayDay(nextDay))) -> StoreStatus.HOLIDAY
             !inBusinessHours -> StoreStatus.CLOSED
             soldOutToday -> StoreStatus.SOLDOUT
             useBreak && now in breakStartMin until breakEndMin -> StoreStatus.BREAK
