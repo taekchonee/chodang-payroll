@@ -29,12 +29,16 @@ jobs:
         run: gradle -p android assembleRelease --no-daemon
 
       - name: 파일 이름 정리
-        run: cp android/app/build/outputs/apk/release/app-release.apk led-sign.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk led-sign.apk
+          cp android/servemark/build/outputs/apk/release/servemark-release.apk serve-mark.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: led-sign-apk
-          path: led-sign.apk
+          path: |
+            led-sign.apk
+            serve-mark.apk
 
       - name: 다운로드용 릴리스에 올리기
         env:
@@ -46,4 +50,4 @@ jobs:
               --title "LED 간판 앱 (최신)" \
               --notes "포스기에서 led-sign.apk 를 내려받아 설치하세요."
           fi
-          gh release upload "$TAG" led-sign.apk --clobber
+          gh release upload "$TAG" led-sign.apk serve-mark.apk --clobber
