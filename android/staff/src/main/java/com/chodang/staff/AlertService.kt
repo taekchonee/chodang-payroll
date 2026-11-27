@@ -268,4 +268,6 @@ class Prefs(ctx: Context) {
     var engine: String get() = p.getString("engine", "") ?: ""; set(v) = p.edit().putString("engine", v).apply()
     var voice: String get() = p.getString("voice", "") ?: ""; set(v) = p.edit().putString("voice", v).apply()
     var rate: Float get() = p.getFloat("rate", 1.1f); set(v) = p.edit().putFloat("rate", v).apply()
+    /** 설정 화면에서 '확인 완료'를 한 번 눌렀는지 */
+    var setupDone: Boolean get() = p.getBoolean("setupDone", false); set(v) = p.edit().putBoolean("setupDone", v).apply()
 }

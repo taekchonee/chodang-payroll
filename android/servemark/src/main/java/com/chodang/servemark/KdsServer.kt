@@ -19,8 +19,10 @@ import kotlin.concurrent.thread
  *  GET  /api/announce?since= → 직원 폰: 새 방송 문장 (없으면 25초까지 기다림)
  *  GET  /say           → 사장님 폰용 직접 방송 화면
  *  POST /api/say?text= → 직접 방송 (홈미니 + 직원 폰)
+ *  GET  /api/soup      → 국·공기밥 남은 양
+ *  POST /api/soup/open?key= → 새 냄비 엶 (+1회 양)
  */
-class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val onChange: () -> Unit) {
+class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val soup: Soup, private val onChange: () -> Unit) {
 
     companion object { const val PORT = 8080 }
 
@@ -80,6 +82,12 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                 val ip = sock.inetAddress?.hostAddress ?: "?"
                 send(sock, 200, "application/json; charset=utf-8", announcer.poll(since, ip, 25_000).toString().toByteArray())
             }
+            method == "GET" && path == "/api/soup" ->
+                send(sock, 200, "application/json; charset=utf-8", soup.json().toByteArray())
+            method == "POST" && path == "/api/soup/open" -> {
+                val ok = q("key")?.let { soup.open(it) } ?: false
+                send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())
+            }
             method == "GET" && path == "/say" ->
                 send(sock, 200, "text/html; charset=utf-8", sayPage().toByteArray())
             method == "POST" && path == "/api/say" -> {
@@ -92,10 +100,8 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
         }
     }
 
-    /** 사장님 폰 크롬용: 문구 입력 + 자주 쓰는 문구 버튼 */
+    /** 사장님 폰 크롬용: 문구 입력 */
     private fun sayPage(): String {
-        val esc = { s: String -> s.replace("&", "&amp;").replace("<", "&lt;").replace("\"", "&quot;") }
-        val presets = RemoteConfig.sayPresets.joinToString("") { "<button class=p>" + esc(it) + "</button>" }
         return """<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>직접 방송</title><style>
 body{margin:0;font-family:-apple-system,"Noto Sans KR",sans-serif;background:#0F1117;color:#E8EAF0;padding:18px}
@@ -109,13 +115,11 @@ textarea{width:100%;box-sizing:border-box;height:110px;font-size:20px;border-rad
 <div style="margin-top:10px;font-size:17px"><label><input type=checkbox id=cm checked style="width:20px;height:20px;vertical-align:-4px"> 홈미니</label>
 &nbsp;&nbsp;<label><input type=checkbox id=cp checked style="width:20px;height:20px;vertical-align:-4px"> 직원 폰</label></div>
 <button id=go>보내기</button><div id=m></div>
-<p style="margin-top:18px">자주 쓰는 문구 (누르면 바로 보냄)</p>$presets
 <script>
 async function send(x){x=x.trim();if(!x)return;m.textContent='보내는 중…';
 const to=cm.checked&&cp.checked?'both':cm.checked?'mini':cp.checked?'phones':'';if(!to){m.textContent='보낼 곳을 하나 이상 골라 주세요';return}
 try{const r=await fetch('/api/say?text='+encodeURIComponent(x)+'&to='+to,{method:'POST'});m.textContent=r.ok?'보냄: '+x:'실패'}catch(e){m.textContent='실패 (매장 와이파이인지 확인)'}}
 go.onclick=()=>{send(t.value);t.value=''};
-document.querySelectorAll('.p').forEach(b=>b.onclick=()=>send(b.textContent));
 </script></body></html>"""
     }
 

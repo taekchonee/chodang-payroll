@@ -20,11 +20,12 @@
   "batch": [
     "제육불고기"
   ],
-  "sayPresets": [
-    "포장 손님 오셨어요",
-    "재료 확인해 주세요",
-    "잠시 주방으로 와 주세요"
+  "soups": [
+    { "key": "hwangtae", "name": "황태해장국", "menus": ["황태해장국"], "pot": 23, "alert": 5, "unit": "인분", "say": "황태해장국 끓이세요", "action": "새로 엶" },
+    { "key": "miyeok", "name": "미역국", "menus": ["한우미역국", "전복미역국"], "pot": 23, "alert": 5, "unit": "인분", "say": "미역국 끓이세요", "action": "새로 엶" },
+    { "key": "rice", "name": "공기밥", "menus": [], "pot": 0, "alert": 0, "unit": "공기", "say": "밥 지으세요", "action": "새로 지음" }
   ],
+  "_국설명": "soups: menus=합산할 메뉴 이름(일부만 같아도 됨), pot=새로 열 때 더하는 양, alert=남은 양이 이 수 아래로 떨어지면 say 문구 방송. pot 이 0 이거나 menus 가 비면 '설정 필요'로 표시(공기밥은 값 정해지면 채우기).",
   "phrases": {
     "new": "신규주문",
     "change": "메뉴변경 발생",

@@ -49,6 +49,8 @@ class ServeService : AccessibilityService() {
         private set
     lateinit var announcer: Announcer
         private set
+    lateinit var soup: Soup
+        private set
     private var kds: KdsServer? = null
     private lateinit var wm: WindowManager
     private var overlay: OverlayView? = null
@@ -70,7 +72,8 @@ class ServeService : AccessibilityService() {
         kitchen = Kitchen(this)
         announcer = Announcer(this)
         kitchen.announce = { announcer.event(it) }
-        kds = KdsServer(this, kitchen, announcer) { overlay?.invalidate() }.also { it.start() }
+        soup = Soup(this).also { it.announce = { t -> announcer.event(t) } }
+        kds = KdsServer(this, kitchen, announcer, soup) { overlay?.invalidate() }.also { it.start() }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
@@ -269,6 +272,7 @@ class ServeService : AccessibilityService() {
     private fun finishGone(table: String, g: Gone) {
         gone.remove(table)
         val cancelled = g.at - cancelPromptAt in 0..60_000
+        soup.release(table, cancelled)
         if (cancelled) {
             kitchen.voidTable(table, g.at)
             Diag.add("$table 주문 취소 → 주방에 취소 표시")
@@ -290,6 +294,11 @@ class ServeService : AccessibilityService() {
                 gone[t.label] = Gone(kitchen.itemsOf(t.label), now)
             }
         }
+        // 포장: 서빙 순서·주방 카드와 별개로 국 남은 양만 셉니다.
+        visibleTables.filter { it.label.startsWith("포장") }.forEach { t ->
+            if (t.occupied) soup.observe(t.label, itemsOf(t))
+            else if (soup.knows(t.label)) soup.release(t.label, cancelled = now - cancelPromptAt in 0..60_000)
+        }
         visibleTables.forEach { t ->
             if (t.label.startsWith("포장") || !t.occupied) return@forEach
             val amount = amountOf(t)
@@ -301,12 +310,14 @@ class ServeService : AccessibilityService() {
                     gone.remove(from)
                     kitchen.move(from, t.label)
                     marks.move(from, t.label)
+                    soup.move(from, t.label)
                     Diag.add("테이블 이동: $from → ${t.label}")
                     return@forEach
                 }
             }
             // 다시 주문이 생긴 테이블은 '비워짐' 기록을 먼저 정리
             gone[t.label]?.let { finishGone(t.label, it) }
+            soup.observe(t.label, items)
             val seen = marks.orderSince(t.label)
             if (seen == 0L || !kitchen.knownTable(t.label)) {
                 if (seen == 0L) {
