@@ -20,11 +20,11 @@ class Kitchen(context: Context) {
 
     companion object {
         /** 조리가 필요 없는 메뉴: 카드 아래에 작게만 표시, 이것만으로는 주방 카드를 만들지 않음 */
-        val EXTRA = listOf("소주", "맥주", "막걸리", "모주", "음료", "공기밥", "할인")
+        val EXTRA: List<String> get() = RemoteConfig.extra
         /** 담아 나가기만 하는 메뉴: 같은 크기로 살짝 흐리게 */
-        val LOW = listOf("초당순두부")
+        val LOW: List<String> get() = RemoteConfig.low
         /** 여러 주문을 묶어 한 번에 조리하는 메뉴 → 주방 화면 위에 합계 */
-        val BATCH = listOf("제육불고기")
+        val BATCH: List<String> get() = RemoteConfig.batch
         /** 취소 표시를 남겨 두는 시간 */
         const val CANCEL_SHOW = 90_000L
 
@@ -76,7 +76,9 @@ class Kitchen(context: Context) {
 
     /** 주방 화면용 JSON (서버 스레드에서 읽음) */
     fun json(): String = snapshot.let {
-        JSONObject(it).put("now", System.currentTimeMillis()).toString()
+        val cfg = RemoteConfig.forKds()
+        JSONObject(it).put("now", System.currentTimeMillis()).put("cfg", cfg)
+            .put("low", cfg.get("low")).put("extra", cfg.get("extra")).put("batch", cfg.get("batch")).toString()
     }
 
     // ---------------- 홀 화면을 읽고 반영 ----------------

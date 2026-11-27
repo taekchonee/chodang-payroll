@@ -34,9 +34,9 @@ class ServeService : AccessibilityService() {
         private val TABLE_LABEL = Regex("^(\\d{1,3}|포장\\s*\\d{0,3})$")
         private val AMOUNT = Regex("[\\d,]{3,}\\s*원")
         /** 조리완료 후 이 시간이 지나면 홀에 '서빙 확인' 깜빡임 */
-        const val SERVE_CHECK_MS = 1 * 60_000L
+        val SERVE_CHECK_MS get() = RemoteConfig.serveCheckMs
         /** 조리완료 후 이 시간이 지나면 자동 서빙완료 */
-        const val AUTO_SERVE_MS = 3 * 60_000L
+        val AUTO_SERVE_MS get() = RemoteConfig.autoServeMs
         private val ITEM = Regex("^(.*\\D)\\s+(\\d{1,3})$")
     }
 
@@ -58,6 +58,7 @@ class ServeService : AccessibilityService() {
     private val ticker = object : Runnable {
         override fun run() {
             if (::kitchen.isInitialized) kitchen.expire(System.currentTimeMillis())
+            RemoteConfig.refreshIfDue()
             scan(); handler.postDelayed(this, 3000)
         }
     }
@@ -65,6 +66,7 @@ class ServeService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         marks = Marks(this)
+        RemoteConfig.init(this)
         kitchen = Kitchen(this)
         announcer = Announcer(this)
         kitchen.announce = { t, p -> announcer.table(t, p) }
@@ -335,7 +337,7 @@ class ServeService : AccessibilityService() {
             val c = kitchen.cookedWaiting(t.label)
             if (c > 0L && now - c > AUTO_SERVE_MS) {
                 marks.add(t.label); kitchen.serve(t.label, now)
-                Diag.add("${t.label} 조리완료 후 3분 → 자동 서빙완료")
+                Diag.add("${t.label} 조리완료 후 ${AUTO_SERVE_MS / 60_000}분 → 자동 서빙완료")
             }
         }
         val marked = marks.all()

@@ -68,6 +68,7 @@ class MainActivity : Activity() {
             s.announcer.enabled = !s.announcer.enabled
         }
         row1.addView(announceButton)
+        row1.addView(button("앱 업데이트") { runUpdate() })
         row1.addView(button("표시 모두 지우기") { marks.clear(); ServeService.instance?.refresh() })
         col.addView(row1)
 
@@ -92,6 +93,7 @@ class MainActivity : Activity() {
         announceButton.text = if (ServeService.instance?.announcer?.enabled != false) "주방 방송 끄기" else "주방 방송 켜기"
         diagButton.text = if (marks.diagOverlay) "진단 표시 끄기" else "진단 표시 켜기"
         info.text = buildString {
+            append("앱 버전: ").append(Updater(this@MainActivity, "serve-mark.apk").currentCode()).append("  ·  설정: ").append(RemoteConfig.status).append('\n')
             append("주방 화면 주소: ").append(kdsAddress()).append('\n')
             append("이지포스 앱: ").append(marks.targetPackage.ifEmpty { "(아직 못 찾음 — 이지포스를 한 번 눌러 주세요)" }).append('\n')
             append("서빙완료 표시 중: ").append(marks.all().sorted().joinToString(", ").ifEmpty { "없음" }).append('\n')
@@ -122,6 +124,18 @@ class MainActivity : Activity() {
             .firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }
             ?.let { "http://${it.hostAddress}:${KdsServer.PORT}" }
     }.getOrNull() ?: "(네트워크 없음)"
+
+
+    /** 앱 업데이트 버튼 */
+    private fun runUpdate() {
+        val u = Updater(this, "serve-mark.apk")
+        toast("새 버전 확인 중…")
+        u.check { latest, cur ->
+            if (latest == null) toast("업데이트 확인 실패 (인터넷 연결을 확인해 주세요)")
+            else if (latest <= cur) toast("최신 버전입니다 (버전 $cur)")
+            else u.install { toast(it) }
+        }
+    }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
 }

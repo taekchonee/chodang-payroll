@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "android/**"
+      - "config/**"
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
 
@@ -15,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -33,6 +36,11 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk led-sign.apk
           cp android/servemark/build/outputs/apk/release/servemark-release.apk serve-mark.apk
           cp android/kds/build/outputs/apk/release/kds-release.apk kitchen.apk
+          c() { echo $((100 + $(git rev-list --count HEAD -- "android/$1"))); }
+          echo "{\"led-sign\": $(c app), \"serve-mark\": $(c servemark), \"kitchen\": $(c kds)}" > version.json
+          cat version.json
+          cp config/settings.json settings.json
+          cp config/kds.html kds.html
 
       - uses: actions/upload-artifact@v4
         with:
@@ -52,4 +60,4 @@ jobs:
               --title "LED 간판 앱 (최신)" \
               --notes "포스기에서 led-sign.apk 를 내려받아 설치하세요."
           fi
-          gh release upload "$TAG" led-sign.apk serve-mark.apk kitchen.apk --clobber
+          gh release upload "$TAG" led-sign.apk serve-mark.apk kitchen.apk version.json settings.json kds.html --clobber

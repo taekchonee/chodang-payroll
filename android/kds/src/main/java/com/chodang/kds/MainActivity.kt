@@ -33,6 +33,14 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var web: WebView
     private lateinit var msg: TextView
+    private lateinit var upd: TextView
+    private val updater by lazy { Updater(this, "kitchen.apk") }
+    private val updateCheck = object : Runnable {
+        override fun run() {
+            updater.check { latest, cur -> upd.visibility = if (latest != null && latest > cur) View.VISIBLE else View.GONE }
+            handler.postDelayed(this, 30 * 60_000L)
+        }
+    }
     private var host: String? = null
     @Volatile private var searching = false
     private val prefs get() = getSharedPreferences("kds", Context.MODE_PRIVATE)
@@ -67,9 +75,17 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE); textSize = 22f; gravity = Gravity.CENTER
             setBackgroundColor(Color.parseColor("#0F1117"))
         }
+        upd = TextView(this).apply {
+            text = "새 버전 있음 · 눌러서 업데이트"; textSize = 16f; setTextColor(Color.parseColor("#1E1200"))
+            setBackgroundColor(Color.parseColor("#EF9F27")); setPadding(28, 18, 28, 18); visibility = View.GONE
+            setOnClickListener { updater.install { m -> text = m } }
+        }
         setContentView(FrameLayout(this).apply {
             addView(web); addView(msg)
+            addView(upd, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, 24, 70) })
         })
+        handler.post(updateCheck)
         host = prefs.getString("host", null)
         if (host != null) open(host!!) else find()
         handler.postDelayed(watchdog, 20_000)

@@ -16,7 +16,7 @@ class Announcer(context: Context) {
 
     companion object {
         const val DEFAULT_URL = "http://192.168.0.45/api/webhook/chodang_kds_announce"
-        private const val MERGE_MS = 1500L
+        private val MERGE_MS get() = RemoteConfig.mergeMs
     }
 
     private val prefs = context.applicationContext.getSharedPreferences("announce", Context.MODE_PRIVATE)

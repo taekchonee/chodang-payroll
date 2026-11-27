@@ -58,7 +58,7 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val onCh
 
         when {
             method == "GET" && (path == "/" || path == "/index.html") ->
-                send(sock, 200, "text/html; charset=utf-8", app.assets.open("kds.html").use { it.readBytes() })
+                send(sock, 200, "text/html; charset=utf-8", RemoteConfig.kdsHtml())
             method == "GET" && path == "/api/state" ->
                 send(sock, 200, "application/json; charset=utf-8", kitchen.json().toByteArray())
             method == "POST" && path == "/api/cook" && id != null -> {

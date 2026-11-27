@@ -471,6 +471,8 @@ class MainActivity : Activity() {
             addView(subTitle("최근 기록"))
             resultText = TextView(ctx).apply { textSize = 13f; setTextColor(C.sub) }
             addView(resultText)
+            addView(subTitle("앱"))
+            addView(buttonRow("앱 업데이트" to { runUpdate() }))
             addView(hint("글꼴: Neo둥근모 (OFL-1.1)  ·  패널 통신: coolledx (MIT)").apply { setPadding(0, dp(16), 0, 0) })
         }
         val holder = LinearLayout(ctx).apply {
@@ -819,6 +821,18 @@ class MainActivity : Activity() {
     private fun matchWrap() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     private fun wrapWrap() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+
+    /** 앱 업데이트 버튼 */
+    private fun runUpdate() {
+        val u = Updater(this, "led-sign.apk")
+        toast("새 버전 확인 중…")
+        u.check { latest, cur ->
+            if (latest == null) toast("업데이트 확인 실패 (인터넷 연결을 확인해 주세요)")
+            else if (latest <= cur) toast("최신 버전입니다 (버전 $cur)")
+            else u.install { toast(it) }
+        }
+    }
+
 
     private fun rounded(fill: Int, radiusDp: Int, stroke: Int? = null) = GradientDrawable().apply {
         setColor(fill)
