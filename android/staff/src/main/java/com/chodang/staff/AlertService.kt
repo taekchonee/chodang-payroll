@@ -123,7 +123,7 @@ class AlertService : Service() {
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
-     * 길안내처럼: 다른 소리(유튜브 등)를 잠깐 줄이고 → 짧은 알림음(블루투스 이어폰이 깨어나며 첫 글자 씹힘 방지)
+     * 다른 소리(유튜브 등)를 잠깐 멈추고 → 짧은 멜로디(쉬고 있던 블루투스 이어폰을 깨워 첫 글자 씹힘 방지)
      * → 안내 읽기 → 끝나면 다른 소리 원래대로. 볼륨은 폰 볼륨 그대로.
      */
     fun speak(text: String) {
@@ -131,7 +131,8 @@ class AlertService : Service() {
         if (!ttsReady) return
         val am = getSystemService(AudioManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
-            focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(navAttrs).build()
+            // 안내하는 동안 다른 앱(유튜브 등) 소리를 완전히 멈춤 → 끝나면 원래대로 (볼륨 자체는 건드리지 않음)
+            focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE).setAudioAttributes(navAttrs).build()
             am.requestAudioFocus(focus!!)
         }
         val chimeMs = playChime()
@@ -141,20 +142,32 @@ class AlertService : Service() {
         }, chimeMs + 120L)
     }
 
-    /** "띵동" 짧은 알림음 (안내와 같은 소리 경로) — 재생 길이(ms) 반환 */
+    /**
+     * 안내 앞 짧은 멜로디 (안내와 같은 소리 경로) — 재생 길이(ms) 반환
+     * 0.4초: 거의 안 들리는 소리로 쉬고 있던 블루투스 이어폰을 먼저 깨움
+     * 이어서: 도-미-솔-도 실로폰 느낌의 부드러운 화음(귀를 찌르지 않게 중간 음역, 천천히 사라짐)
+     */
     private fun playChime(): Long {
         val rate = 44100
-        val tones = listOf(988.0 to 0.14, 1319.0 to 0.20)
-        val total = tones.sumOf { (it.second * rate).toInt() }
-        val pcm = ShortArray(total)
-        var k = 0
-        tones.forEach { (f, sec) ->
-            val n = (sec * rate).toInt()
+        val lead = 0.40
+        val notes = listOf(523.25, 659.25, 783.99, 1046.50)   // C5 E5 G5 C6
+        val step = 0.16
+        val ring = 0.75
+        val total = ((lead + step * (notes.size - 1) + ring) * rate).toInt()
+        val buf = DoubleArray(total)
+        // 깨우기용: 아주 작은 소리(사람 귀엔 거의 안 들림)
+        for (i in 0 until (lead * rate).toInt()) buf[i] = Math.sin(2 * Math.PI * 200 * i / rate) * 0.002
+        notes.forEachIndexed { k, f ->
+            val start = ((lead + step * k) * rate).toInt()
+            val n = (ring * rate).toInt()
             for (i in 0 until n) {
-                val env = minOf(1.0, i / (rate * 0.01)) * minOf(1.0, (n - i) / (rate * 0.04))
-                pcm[k++] = (Math.sin(2 * Math.PI * f * i / rate) * env * 0.5 * Short.MAX_VALUE).toInt().toShort()
+                val t = i.toDouble() / rate
+                val env = minOf(1.0, t / 0.008) * Math.exp(-t * 5.0)      // 톡 치고 천천히 사라짐
+                val v = Math.sin(2 * Math.PI * f * t) + 0.25 * Math.sin(4 * Math.PI * f * t) + 0.08 * Math.sin(6 * Math.PI * f * t)
+                if (start + i < total) buf[start + i] += v * env * (if (k == notes.size - 1) 0.30 else 0.24)
             }
         }
+        val pcm = ShortArray(total) { (buf[it].coerceIn(-1.0, 1.0) * Short.MAX_VALUE).toInt().toShort() }
         return runCatching {
             val track = android.media.AudioTrack.Builder()
                 .setAudioAttributes(navAttrs)
