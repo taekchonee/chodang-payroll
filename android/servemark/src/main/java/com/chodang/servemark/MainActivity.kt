@@ -80,6 +80,7 @@ class MainActivity : Activity() {
         status.setTextColor(Color.parseColor(if (on) "#15803D" else "#C62828"))
         diagButton.text = if (marks.diagOverlay) "진단 표시 끄기" else "진단 표시 켜기"
         info.text = buildString {
+            append("주방 화면 주소: ").append(kdsAddress()).append('\n')
             append("이지포스 앱: ").append(marks.targetPackage.ifEmpty { "(아직 못 찾음 — 이지포스를 한 번 눌러 주세요)" }).append('\n')
             append("서빙완료 표시 중: ").append(marks.all().sorted().joinToString(", ").ifEmpty { "없음" }).append('\n')
             append("서빙 순서: ").append(ServeService.instance?.queue?.joinToString(" → ")?.ifEmpty { "남은 서빙 없음" } ?: "-").append('\n')
@@ -100,6 +101,15 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) }
     }
+
+    /** 이 포스기의 매장 내 주소 (주방 태블릿 크롬에 입력) */
+    private fun kdsAddress(): String = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }
+            ?.let { "http://${it.hostAddress}:${KdsServer.PORT}" }
+    }.getOrNull() ?: "(네트워크 없음)"
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
 }

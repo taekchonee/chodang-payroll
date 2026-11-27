@@ -159,7 +159,8 @@ class ServeService : AccessibilityService() {
             return
         }
         val on = marks.toggle(label)
-        if (on) kitchen.clearTable(label, forget = false)  // 서빙완료 → 주방 주문표 삭제
+        // 서빙완료 → 주방에서 숨김, 해제 → 되살림
+        if (on) kitchen.serve(label, System.currentTimeMillis()) else kitchen.unserve(label)
         Diag.add("길게 누름: $label 서빙완료 ${if (on) "표시" else "해제"}")
         overlay?.invalidate()
         handler.post(scanRunnable)
@@ -382,7 +383,7 @@ class ServeService : AccessibilityService() {
     private fun onSaleButton() {
         val table = saleTable ?: return
         val on = marks.toggle(table)
-        if (on) kitchen.clearTable(table, forget = false)
+        if (on) kitchen.serve(table, System.currentTimeMillis()) else kitchen.unserve(table)
         Diag.add("주문 화면 버튼: $table 서빙완료 ${if (on) "표시" else "해제"}")
         hideSaleButton()
         // 표시 후 주문 화면을 닫습니다(그 화면의 X 하나만).

@@ -46,6 +46,9 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:stick
 .tk.void{background:#2A1416;outline:2px solid #E24B4A}
 .voidmsg{margin:auto 14px 14px;height:62px;border-radius:12px;background:#501313;color:#F7C1C1;font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .chipcx{outline:1px solid #A32D2D}
+.addsep{display:flex;align-items:center;gap:8px;margin:8px 16px 2px;font-size:13px;color:#FAC775}
+.addsep::before,.addsep::after{content:"";flex:1;height:1px;background:#633806}
+.at{font-size:15px;color:#FAC775;font-family:ui-monospace,Menlo,Consolas,monospace;margin-left:4px}
 .ext{font-size:15px;color:#888780;padding:4px 16px 0;line-height:1.5}
 .done{margin:auto 14px 14px;height:62px;border-radius:12px;border:none;background:var(--btn);color:#fff;font-size:21px;font-weight:700;cursor:pointer}
 .done:active{background:#0F6E56}
@@ -89,7 +92,7 @@ $('sound').onclick=()=>{audio=audio||new (window.AudioContext||window.webkitAudi
 async function load(){
   try{
     const r=await fetch('/api/state',{cache:'no-store'});const j=await r.json();
-    offset=j.now-Date.now();state=j;lastOk=Date.now();
+    offset=j.now-Date.now();j.tickets=j.tickets.filter(t=>!t.served);state=j;lastOk=Date.now();
     const ids=new Set(j.tickets.filter(t=>!t.cooked&&!t.voided).map(t=>t.id));
     const cx=Math.max(0,...j.tickets.map(t=>Math.max(t.cancelAt||0,t.voided||0)));
     if(seen){if([...ids].some(id=>!seen.has(id)))beep();if(cx>lastCancel)alarm()}
@@ -116,11 +119,14 @@ function render(){
   $('batch').innerHTML=Object.entries(sum).map(([n,q])=>'<div><span>묶음 조리</span>'+esc(n)+' '+q+'</div>').join('');
   let rank=0;
   $('grid').innerHTML=open.length?open.map(t=>{
-    const s=(now()-t.created)/1000,c=t.voided?'#E24B4A':col(s,t.add);
+    const s=(now()-t.created)/1000,c=t.voided?'#E24B4A':col(s,false);
     const tag=kindTag(t,rank);if(!t.voided&&!t.add)rank++;
-    const plus=(t.add&&t.kind!=='change')||t.kind==='change';
+    const addSum={};(t.adds||[]).forEach(([n,q])=>addSum[n]=(addSum[n]||0)+q);
+    const row=(n,q,at)=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(at?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+(at?' <span class="at" data-at="'+at+'">('+fmt((now()-at)/1000)+')</span>':'')+'</span><span class="qty">'+q+'</span></div>';
+    const base=t.items.map(([n,q])=>[n,q-(addSum[n]||0)]).filter(([n,q])=>q>0&&!isExtra(n));
+    const addRows=(t.adds||[]).filter(([n,q])=>q>0&&!isExtra(n));
     const items=t.voided?(t.items.concat(t.cancelled||[])).filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it cx"><span class="nm">'+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')
-      :t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(plus?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')+cxRows(t);
+      :base.map(([n,q])=>row(n,q,0)).join('')+(addRows.length?'<div class="addsep"><span>추가</span></div>'+addRows.map(([n,q,at])=>row(n,q,at)).join(''):'')+cxRows(t);
     return '<div class="tk'+(t.voided?' void':'')+'"'+(t.voided?'':' data-c="'+t.created+'" data-a="'+(t.add?1:0)+'"')+'><div class="bar" style="background:'+c+'"></div>'+
       '<div class="top"><div>'+tag+moved(t)+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
       '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+(t.voided?'취소':fmt(s))+'</span><small>'+(t.voided?'조리 중지':'경과')+'</small></div></div>'+
@@ -141,7 +147,7 @@ setInterval(()=>{
   $('live').className='live'+(bad?' bad':'');$('liveText').textContent=bad?(lastOk?'연결 끊김 · '+ago+'초 전':'연결 중'):'실시간';
   tick();
 },1000);
-function tick(){document.querySelectorAll(".tk[data-c]").forEach(el=>{const s=(now()-(+el.dataset.c))/1000,c=col(s,el.dataset.a=="1");el.querySelector(".bar").style.background=c;const tm=el.querySelector(".time");tm.style.color=c;tm.querySelector("span").textContent=fmt(s);const p=el.querySelector(".prog i");p.style.background=c;p.style.width=Math.min(100,s/1200*100)+"%"})}
+function tick(){document.querySelectorAll(".tk[data-c]").forEach(el=>{const s=(now()-(+el.dataset.c))/1000,c=col(s,el.dataset.a=="1");el.querySelector(".bar").style.background=c;const tm=el.querySelector(".time");tm.style.color=c;tm.querySelector("span").textContent=fmt(s);const p=el.querySelector(".prog i");p.style.background=c;p.style.width=Math.min(100,s/1200*100)+"%"});document.querySelectorAll(".at[data-at]").forEach(el=>{el.textContent="("+fmt((now()-(+el.dataset.at))/1000)+")"})}
 setInterval(load,1500);load();
 </script>
 </body>

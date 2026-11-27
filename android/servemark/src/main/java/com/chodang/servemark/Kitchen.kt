@@ -33,6 +33,9 @@ class Kitchen(context: Context) {
         private fun needsCooking(m: Map<String, Int>) = m.keys.any { forKitchen(it) }
     }
 
+    /** 추가 주문 한 줄 (메뉴, 수량, 추가된 시각) */
+    data class Add(val name: String, var qty: Int, val at: Long)
+
     data class Ticket(
         val id: Long,
         var table: String,
@@ -44,12 +47,18 @@ class Kitchen(context: Context) {
         var cancelAt: Long = 0L,   // 마지막으로 메뉴가 취소된 시각
         var voided: Long = 0L,     // 주문 전체가 취소된 시각
         var movedFrom: String = "",
+        /** items 중 나중에 추가된 몫 (카드에서 구분선 아래에 표시) */
+        val adds: MutableList<Add> = mutableListOf(),
+        /** 홀에서 서빙완료한 시각 (주방 화면에서 숨김, 서빙완료 해제하면 되살림) */
+        var served: Long = 0L,
     )
 
     private val prefs = context.applicationContext.getSharedPreferences("kitchen", Context.MODE_PRIVATE)
     private val tickets = mutableListOf<Ticket>()
     /** 테이블별 마지막으로 읽은 메뉴 (추가·취소를 알아채기 위함) */
     private val lastItems = mutableMapOf<String, Map<String, Int>>()
+    /** 테이블별 최초 주문 시각 (카드의 큰 경과 시간 기준) */
+    private val start = mutableMapOf<String, Long>()
     private var nextId = System.currentTimeMillis()
     @Volatile private var snapshot: String = "{\"tickets\":[]}"
 
@@ -71,6 +80,7 @@ class Kitchen(context: Context) {
     @Synchronized fun newOrder(table: String, items: Map<String, Int>, now: Long) {
         tickets.removeAll { it.table == table && it.voided == 0L }
         lastItems[table] = items
+        start[table] = now
         if (needsCooking(items)) tickets += Ticket(nextId++, table, LinkedHashMap(items), "new", now)
         save()
     }
@@ -91,7 +101,7 @@ class Kitchen(context: Context) {
         lastItems[table] = items
         if (added.isEmpty() && removed.isEmpty()) return false
 
-        val live = tickets.filter { it.table == table && it.voided == 0L }
+        val live = tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }
         // 빠진 메뉴: 조리 전 티켓 먼저, 없으면 조리완료 티켓에서 빼고 취소선으로 남깁니다.
         removed.forEach { (k, q) ->
             var left = q
@@ -101,6 +111,12 @@ class Kitchen(context: Context) {
                 if (have <= 0) return@forEach
                 val take = minOf(have, left)
                 if (have - take > 0) t.items[k] = have - take else t.items.remove(k)
+                // 추가분에서 먼저(최근 것부터) 뺍니다.
+                var fromAdds = take
+                t.adds.asReversed().filter { it.name == k }.forEach { a ->
+                    val d = minOf(a.qty, fromAdds); a.qty -= d; fromAdds -= d
+                }
+                t.adds.removeAll { it.qty <= 0 }
                 t.cancelled[k] = (t.cancelled[k] ?: 0) + take
                 t.cancelAt = now
                 left -= take
@@ -108,10 +124,14 @@ class Kitchen(context: Context) {
         }
         val open = live.lastOrNull { it.cooked == 0L }
         if (added.isNotEmpty()) {
-            if (open != null) added.forEach { (k, q) -> open.items[k] = (open.items[k] ?: 0) + q }
+            if (open != null) added.forEach { (k, q) ->
+                open.items[k] = (open.items[k] ?: 0) + q
+                open.adds += Add(k, q, now)
+            }
             else if (needsCooking(added)) {
                 val kind = if (needsCooking(removed)) "change" else "add"
-                tickets += Ticket(nextId++, table, added, kind, now).also { t ->
+                tickets += Ticket(nextId++, table, added, kind, start[table] ?: now).also { t ->
+                    added.forEach { (k, q) -> t.adds += Add(k, q, now) }
                     if (kind == "change") { t.cancelled.putAll(removed); t.cancelAt = now }
                 }
             }
@@ -128,21 +148,34 @@ class Kitchen(context: Context) {
     /** 주문 전체 취소: 카드에 '주문 취소'를 잠깐 띄운 뒤 expire() 가 지움 */
     @Synchronized fun voidTable(table: String, now: Long) {
         tickets.filter { it.table == table && it.voided == 0L }.forEach { it.voided = now }
-        lastItems.remove(table)
+        lastItems.remove(table); start.remove(table)
         save()
     }
 
     /** 결제로 테이블이 비었을 때(forget=true), 또는 홀에서 서빙완료 했을 때 → 조용히 삭제 */
     @Synchronized fun clearTable(table: String, forget: Boolean) {
         val changed = tickets.removeAll { it.table == table && it.voided == 0L }
-        if (forget) lastItems.remove(table)
+        if (forget) { lastItems.remove(table); start.remove(table) }
         if (changed || forget) save()
+    }
+
+    /** 홀 서빙완료: 그 테이블 주문표를 주방 화면에서 숨깁니다. */
+    @Synchronized fun serve(table: String, now: Long) {
+        tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }.forEach { it.served = now }
+        save()
+    }
+
+    /** 서빙완료 해제(잘못 누름): 숨겼던 주문표를 원래 자리로 되살립니다. */
+    @Synchronized fun unserve(table: String) {
+        tickets.filter { it.table == table && it.served > 0L }.forEach { it.served = 0L }
+        save()
     }
 
     /** 테이블 이동: 주문표를 새 테이블로 옮깁니다. */
     @Synchronized fun move(from: String, to: String) {
         tickets.filter { it.table == from }.forEach { it.table = to; it.movedFrom = from }
         lastItems.remove(from)?.let { lastItems[to] = it }
+        start.remove(from)?.let { start[to] = it }
         save()
     }
 
@@ -152,6 +185,8 @@ class Kitchen(context: Context) {
         tickets.forEach { t ->
             if (t.cancelled.isNotEmpty() && now - t.cancelAt > CANCEL_SHOW) { t.cancelled.clear(); changed = true }
         }
+        // 취소 표시가 끝났는데 조리할 메뉴가 하나도 안 남은 주문표(조리완료 포함)는 지웁니다.
+        if (tickets.removeAll { it.voided == 0L && it.cancelled.isEmpty() && !needsCooking(it.items) }) changed = true
         if (changed) save()
     }
 
@@ -178,13 +213,15 @@ class Kitchen(context: Context) {
             arr.put(JSONObject().put("id", t.id).put("table", t.table).put("kind", t.kind)
                 .put("add", t.kind != "new").put("created", t.created).put("cooked", t.cooked)
                 .put("items", pairs(t.items)).put("cancelled", pairs(t.cancelled))
-                .put("cancelAt", t.cancelAt).put("voided", t.voided).put("movedFrom", t.movedFrom))
+                .put("cancelAt", t.cancelAt).put("voided", t.voided).put("served", t.served).put("movedFrom", t.movedFrom)
+                .put("adds", JSONArray().apply { t.adds.forEach { a -> put(JSONArray().put(a.name).put(a.qty).put(a.at)) } }))
         }
         val last = JSONObject()
         lastItems.forEach { (t, m) -> last.put(t, JSONObject(m as Map<*, *>)) }
+        val st = JSONObject(); start.forEach { (t, v) -> st.put(t, v) }
         snapshot = JSONObject().put("tickets", arr)
             .put("low", JSONArray(LOW)).put("extra", JSONArray(EXTRA)).put("batch", JSONArray(BATCH)).toString()
-        prefs.edit().putString("tickets", arr.toString()).putString("last", last.toString())
+        prefs.edit().putString("tickets", arr.toString()).putString("last", last.toString()).putString("start", st.toString())
             .putLong("nextId", nextId).apply()
     }
 
@@ -197,8 +234,13 @@ class Kitchen(context: Context) {
                 val kind = o.optString("kind", if (o.optBoolean("add")) "add" else "new")
                 tickets += Ticket(o.getLong("id"), o.getString("table"), unpairs(o.getJSONArray("items")), kind,
                     o.getLong("created"), o.optLong("cooked"), unpairs(o.optJSONArray("cancelled")),
-                    o.optLong("cancelAt"), o.optLong("voided"), o.optString("movedFrom", ""))
+                    o.optLong("cancelAt"), o.optLong("voided"), o.optString("movedFrom", "")).also { t ->
+                    t.served = o.optLong("served")
+                    o.optJSONArray("adds")?.let { a -> for (j in 0 until a.length()) a.getJSONArray(j).let { x -> t.adds += Add(x.getString(0), x.getInt(1), x.getLong(2)) } }
+                }
             }
+            val st = JSONObject(prefs.getString("start", "{}"))
+            st.keys().forEach { start[it] = st.getLong(it) }
             val last = JSONObject(prefs.getString("last", "{}"))
             last.keys().forEach { t ->
                 val m = last.getJSONObject(t)
