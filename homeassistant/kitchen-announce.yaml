@@ -9,6 +9,11 @@ triggers:
       - POST
     local_only: true
 actions:
+  - action: media_player.volume_set
+    target:
+      entity_id: media_player.maejang_maejangjubang_hommini
+    data:
+      volume_level: 1.0
   - action: tts.speak
     target:
       entity_id: tts.edge_tts_service_edge_tts
