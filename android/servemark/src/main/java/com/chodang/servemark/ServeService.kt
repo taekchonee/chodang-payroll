@@ -33,6 +33,10 @@ class ServeService : AccessibilityService() {
             private set
         private val TABLE_LABEL = Regex("^(\\d{1,3}|포장\\s*\\d{0,3})$")
         private val AMOUNT = Regex("[\\d,]{3,}\\s*원")
+        /** 조리완료 후 이 시간이 지나면 홀에 '서빙 확인' 깜빡임 */
+        const val SERVE_CHECK_MS = 1 * 60_000L
+        /** 조리완료 후 이 시간이 지나면 자동 서빙완료 */
+        const val AUTO_SERVE_MS = 3 * 60_000L
         private val ITEM = Regex("^(.*\\D)\\s+(\\d{1,3})$")
     }
 
@@ -320,6 +324,15 @@ class ServeService : AccessibilityService() {
         gone.entries.toList().forEach { (table, g) ->
             if (now - g.at > 6_000 && byLabel[table]?.occupied != true) finishGone(table, g)
         }
+        // 조리완료 후 3분이 지나도 서빙완료가 안 되면 자동으로 서빙완료 처리 (순서 줄이 막히지 않게)
+        visibleTables.forEach { t ->
+            if (!t.occupied || marks.has(t.label)) return@forEach
+            val c = kitchen.cookedWaiting(t.label)
+            if (c > 0L && now - c > AUTO_SERVE_MS) {
+                marks.add(t.label); kitchen.serve(t.label, now)
+                Diag.add("${t.label} 조리완료 후 3분 → 자동 서빙완료")
+            }
+        }
         val marked = marks.all()
         queue = visibleTables
             .filter { it.occupied && !it.label.startsWith("포장") && it.label !in marked }
@@ -490,13 +503,31 @@ class ServeService : AccessibilityService() {
         }
 
         /** 서빙 순서 번호, 다음 서빙(빨간 띠), 남은 서빙 수 */
+        private var blinking = false
+        private val amberFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E6D97706") }
+        private val amberStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#D97706"); style = Paint.Style.STROKE; strokeWidth = 3 * d
+        }
+
         private fun drawQueue(c: Canvas) {
+            blinking = false
             val q = queue
             val byLabel = visibleTables.associateBy { it.label }
             q.forEachIndexed { i, label ->
                 val t = byLabel[label] ?: return@forEachIndexed
                 val r = RectF(t.bounds).apply { offset(-loc[0].toFloat(), -loc[1].toFloat()) }
-                if (i == 0) {
+                val cw = kitchen.cookedWaiting(label)
+                val late = cw > 0L && System.currentTimeMillis() - cw > SERVE_CHECK_MS
+                if (late) {
+                    blinking = true
+                    if ((System.currentTimeMillis() / 500) % 2 == 0L) {
+                        c.drawRect(r, amberStroke)
+                        val h = minOf(28 * d, r.height() / 2.5f)
+                        val band = RectF(r.left, r.bottom - h, r.right, r.bottom)
+                        c.drawRect(band, amberFill)
+                        c.drawText("서빙 확인", band.centerX(), band.centerY() + text.textSize / 3, text)
+                    }
+                } else if (i == 0) {
                     c.drawRect(r, redStroke)
                     val h = minOf(28 * d, r.height() / 2.5f)
                     val band = RectF(r.left, r.bottom - h, r.right, r.bottom)
@@ -520,6 +551,7 @@ class ServeService : AccessibilityService() {
             c.drawRoundRect(box, 10 * d, 10 * d, boxFill)
             c.drawText(if (q.isEmpty()) "남은 서빙 없음" else "서빙 대기 ${q.size}",
                 box.centerX(), box.centerY() + boxText.textSize / 3, boxText)
+            if (blinking) postInvalidateDelayed(500)
         }
 
         override fun onDraw(c: Canvas) {

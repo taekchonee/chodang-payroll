@@ -86,12 +86,13 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const isLow=n=>state.low.some(k=>n.includes(k));
 const isExtra=n=>(state.extra||[]).some(k=>n.includes(k));
 const isBatch=n=>state.batch.some(k=>n.includes(k));
-function col(s,add){if(add)return'#EF9F27';return s>=900?'#E24B4A':s>=480?'#EF9F27':'#5DCAA5'}
+function col(s,add){if(add)return'#EF9F27';return s>=600?'#E24B4A':s>=300?'#EF9F27':'#5DCAA5'}
 function fmt(s){s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function now(){return Date.now()+offset}
 function beep(){if(!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=880;o.connect(g);g.connect(audio.destination);g.gain.setValueAtTime(.25,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.6);o.start();o.stop(audio.currentTime+.6)}
 function soundOn(){if(audio&&audio.state==='running')return;audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume();$('sound').textContent='소리 켜짐';$('sound').classList.remove('off');beep()}
 $('sound').onclick=soundOn;document.addEventListener('pointerdown',soundOn,{once:true});
+if(navigator.userAgent.includes('ChodangKDS')){soundOn();$('sound').style.display='none'}
 async function load(){
   try{
     const r=await fetch('/api/state',{cache:'no-store'});const j=await r.json();
@@ -133,7 +134,7 @@ function render(){
     return '<div class="tk'+(t.voided?' void':'')+'"'+(t.voided?'':' data-c="'+t.created+'" data-a="'+(t.add?1:0)+'"')+'><div class="bar" style="background:'+c+'"></div>'+
       '<div class="top"><div>'+tag+moved(t)+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
       '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+(t.voided?'취소':fmt(s))+'</span><small>'+(t.voided?'조리 중지':'경과')+'</small></div></div>'+
-      '<div class="prog"><i style="background:'+c+';width:'+(t.voided?100:Math.min(100,s/1200*100))+'%"></i></div>'+items+
+      '<div class="prog"><i style="background:'+c+';width:'+(t.voided?100:Math.min(100,s/900*100))+'%"></i></div>'+items+
       (!t.voided&&t.items.some(([n])=>isExtra(n))?'<div class="ext">'+t.items.filter(([n])=>isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</div>':'')+
       '<div style="height:10px"></div>'+(t.voided?'<div class="voidmsg">주문이 취소되었습니다</div>':'<button class="done" data-id="'+t.id+'">조리완료</button>')+'</div>'
   }).join(''):'<div class="empty">조리할 주문이 없습니다</div>';
@@ -150,7 +151,7 @@ setInterval(()=>{
   $('live').className='live'+(bad?' bad':'');$('liveText').textContent=bad?(lastOk?'연결 끊김 · '+ago+'초 전':'연결 중'):'실시간';
   tick();
 },1000);
-function tick(){document.querySelectorAll(".tk[data-c]").forEach(el=>{const s=(now()-(+el.dataset.c))/1000,c=col(s,el.dataset.a=="1");el.querySelector(".bar").style.background=c;const tm=el.querySelector(".time");tm.style.color=c;tm.querySelector("span").textContent=fmt(s);const p=el.querySelector(".prog i");p.style.background=c;p.style.width=Math.min(100,s/1200*100)+"%"});document.querySelectorAll(".ago[data-cooked]").forEach(el=>{el.textContent=Math.floor((now()-(+el.dataset.cooked))/60000)+"분 전"});document.querySelectorAll(".at[data-at]").forEach(el=>{el.textContent="("+fmt((now()-(+el.dataset.at))/1000)+")"})}
+function tick(){document.querySelectorAll(".tk[data-c]").forEach(el=>{const s=(now()-(+el.dataset.c))/1000,c=col(s,el.dataset.a=="1");el.querySelector(".bar").style.background=c;const tm=el.querySelector(".time");tm.style.color=c;tm.querySelector("span").textContent=fmt(s);const p=el.querySelector(".prog i");p.style.background=c;p.style.width=Math.min(100,s/900*100)+"%"});document.querySelectorAll(".ago[data-cooked]").forEach(el=>{el.textContent=Math.floor((now()-(+el.dataset.cooked))/60000)+"분 전"});document.querySelectorAll(".at[data-at]").forEach(el=>{el.textContent="("+fmt((now()-(+el.dataset.at))/1000)+")"})}
 setInterval(load,1500);load();
 </script>
 </body>

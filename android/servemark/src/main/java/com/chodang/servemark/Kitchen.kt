@@ -159,6 +159,13 @@ class Kitchen(context: Context) {
         if (changed || forget) save()
     }
 
+    /** 조리완료됐는데 아직 서빙 안 된 테이블이면 조리완료 시각(가장 이른 것), 아니면 0 */
+    @Synchronized fun cookedWaiting(table: String): Long {
+        val mine = tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }
+        if (mine.isEmpty() || mine.any { it.cooked == 0L }) return 0L
+        return mine.minOf { it.cooked }
+    }
+
     /** 홀 서빙완료: 그 테이블 주문표를 주방 화면에서 숨깁니다. */
     @Synchronized fun serve(table: String, now: Long) {
         tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }.forEach { it.served = now }
