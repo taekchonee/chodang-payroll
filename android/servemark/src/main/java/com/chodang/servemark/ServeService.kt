@@ -445,10 +445,6 @@ class ServeService : AccessibilityService() {
             color = Color.WHITE; textSize = 14 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
         }
         private val boxFill = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val cookedFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#0F6E56") }
-        private val cookedText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; textSize = 12 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
-        }
         private val boxText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE; textSize = 17 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
         }
@@ -473,13 +469,6 @@ class ServeService : AccessibilityService() {
                 badge.color = Color.parseColor(if (i == 0) "#C62828" else "#1E2430")
                 c.drawCircle(cx, cy, rad, badge)
                 c.drawText("${i + 1}", cx, cy + badgeText.textSize / 3, badgeText)
-                // 주방에서 조리완료 → 칸 오른쪽 위에 '조리완료' 딱지
-                if (kitchen.hasCookedOnly(label)) {
-                    val w = cookedText.measureText("조리완료") + 12 * d
-                    val tag = RectF(r.right - w - 4 * d, r.top + 4 * d, r.right - 4 * d, r.top + 26 * d)
-                    c.drawRoundRect(tag, 6 * d, 6 * d, cookedFill)
-                    c.drawText("조리완료", tag.centerX(), tag.centerY() + cookedText.textSize / 3, cookedText)
-                }
             }
             // 남은 서빙 수: 포장0 칸 아래 빈 곳
             val anchor = visibleTables.firstOrNull { it.label.startsWith("포장") }
