@@ -72,16 +72,6 @@ class MainActivity : Activity() {
         row1.addView(button("표시 모두 지우기") { marks.clear(); ServeService.instance?.refresh() })
         col.addView(row1)
 
-        // 직접 방송: 매장주방홈미니 + 직원 폰
-        val sayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
-        val sayInput = android.widget.EditText(this).apply { hint = "직접 방송할 문구"; textSize = 16f; setSingleLine() }
-        sayRow.addView(sayInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        sayRow.addView(button("직접 방송") {
-            val t = sayInput.text.toString().trim()
-            val s = ServeService.instance ?: return@button toast("먼저 접근성에서 '서빙 표시'를 켜 주세요")
-            if (t.isNotEmpty()) { s.announcer.say(t); sayInput.setText(""); toast("보냄: $t") }
-        })
-        col.addView(sayRow)
 
         info = TextView(this).apply { textSize = 14f; setTextColor(Color.parseColor("#374151")); setPadding(0, dp(12), 0, dp(4)) }
         col.addView(info)
@@ -105,7 +95,7 @@ class MainActivity : Activity() {
         diagButton.text = if (marks.diagOverlay) "진단 표시 끄기" else "진단 표시 켜기"
         info.text = buildString {
             append("앱 버전: ").append(Updater(this@MainActivity, "serve-mark.apk").currentCode()).append("  ·  설정: ").append(RemoteConfig.status).append('\n')
-            append("직원 폰 연결: ").append(ServeService.instance?.announcer?.phonesOnline() ?: 0).append("대  ·  사장님 폰 직접 방송: ").append(kdsAddress()).append("/say").append('\n')
+            append("직원 폰 연결: ").append(ServeService.instance?.announcer?.phonesOnline() ?: 0).append("대").append('\n')
             append("주방 화면 주소: ").append(kdsAddress()).append('\n')
             append("이지포스 앱: ").append(marks.targetPackage.ifEmpty { "(아직 못 찾음 — 이지포스를 한 번 눌러 주세요)" }).append('\n')
             append("서빙완료 표시 중: ").append(marks.all().sorted().joinToString(", ").ifEmpty { "없음" }).append('\n')

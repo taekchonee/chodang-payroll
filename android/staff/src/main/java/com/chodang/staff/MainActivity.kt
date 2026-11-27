@@ -64,6 +64,37 @@ class MainActivity : Activity() {
         status = text("", 16f, bold = true)
         ind.addView(status)
         col.addView(ind, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        // 이어폰 착용 후 셀프 체크: 실제 안내와 같은 경로(띵동 + 음성, 다른 소리 잠깐 줄임)로 들려줌
+        col.addView(button("🎧 이어폰 소리 확인") {
+            val s = AlertService.instance ?: return@button toast("먼저 알림을 켜 주세요")
+            s.speak("소리 확인입니다. 잘 들리면 준비 완료입니다.")
+            if (!AlertService.status.contains("받는 중")) toast("소리는 확인됐지만 아직 포스기와 연결되지 않았습니다 (표시등 확인)")
+        })
+
+        // 직접 방송: 매장주방홈미니 + 주방 직원 폰으로 보냄 (매장 와이파이에서만)
+        col.addView(section("직접 방송"))
+        val sayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val sayInput = android.widget.EditText(this).apply { hint = "보낼 문구"; textSize = 16f; setSingleLine() }
+        sayRow.addView(sayInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val sendBtn = button("보내기") {
+            val t = sayInput.text.toString().trim()
+            val host = prefs.host
+            if (t.isEmpty()) return@button
+            if (host.isEmpty() || !AlertService.status.contains("받는 중")) return@button toast("포스기와 연결된 뒤에 보낼 수 있습니다 (표시등이 초록일 때)")
+            kotlin.concurrent.thread {
+                val ok = runCatching {
+                    (java.net.URL("http://$host:${AlertService.PORT}/api/say?text=" + java.net.URLEncoder.encode(t, "UTF-8"))
+                        .openConnection() as java.net.HttpURLConnection).run {
+                        requestMethod = "POST"; connectTimeout = 2000; readTimeout = 4000
+                        val c = responseCode; disconnect(); c == 200
+                    }
+                }.getOrDefault(false)
+                handler.post { toast(if (ok) "보냄: $t" else "보내기 실패"); if (ok) sayInput.setText("") }
+            }
+        }
+        sayRow.addView(sendBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        col.addView(sayRow)
+        col.addView(text("홈미니와 직원 폰 모두에서 나옵니다.", 13f).apply { setPadding(0, dp(4), 0, 0) })
 
         col.addView(card(
             "이 앱이 하는 일",
