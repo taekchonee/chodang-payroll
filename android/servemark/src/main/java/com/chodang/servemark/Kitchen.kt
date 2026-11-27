@@ -15,17 +15,17 @@ import org.json.JSONObject
 class Kitchen(context: Context) {
 
     companion object {
-        /** 주방에 보낼 필요 없는 메뉴 (이름에 이 말이 들어가면 제외) */
-        val EXCLUDE = listOf("소주", "맥주", "막걸리", "모주", "음료", "공기밥")
-        /** 주방에 흐리게만 보여 줄 메뉴 (담아 나가기만 하는 것, 할인) */
-        val LOW = listOf("초당순두부", "할인")
+        /** 조리가 필요 없는 메뉴: 카드 아래에 작게만 표시, 이것만으로는 주방 카드를 만들지 않음 */
+        val EXTRA = listOf("소주", "맥주", "막걸리", "모주", "음료", "공기밥", "할인")
+        /** 담아 나가기만 하는 메뉴: 같은 크기로 살짝 흐리게 */
+        val LOW = listOf("초당순두부")
         /** 여러 주문을 묶어 한 번에 조리하는 메뉴 → 주방 화면 위에 합계 */
         val BATCH = listOf("제육불고기")
 
-        fun forKitchen(name: String) = EXCLUDE.none { name.contains(it) }
+        /** 조리가 필요한 메뉴인지 */
+        fun forKitchen(name: String) = EXTRA.none { name.contains(it) }
+        private fun needsCooking(m: Map<String, Int>) = m.keys.any { forKitchen(it) }
     }
-
-    private fun kitchenOnly(m: Map<String, Int>) = LinkedHashMap(m.filterKeys { forKitchen(it) })
 
     data class Ticket(
         val id: Long,
@@ -65,8 +65,7 @@ class Kitchen(context: Context) {
     @Synchronized fun newOrder(table: String, items: Map<String, Int>, now: Long) {
         tickets.removeAll { it.table == table }
         lastItems[table] = items
-        val k = kitchenOnly(items)
-        if (k.isNotEmpty()) tickets += Ticket(nextId++, table, k, false, now)
+        if (needsCooking(items)) tickets += Ticket(nextId++, table, LinkedHashMap(items), false, now)
         save()
     }
 
@@ -86,8 +85,6 @@ class Kitchen(context: Context) {
         lastItems[table] = items
         if (added.isEmpty() && removed.isEmpty()) return false
         val anyAdded = added.isNotEmpty()
-        added.keys.retainAll { forKitchen(it) }
-        removed.keys.retainAll { forKitchen(it) }
 
         val open = tickets.lastOrNull { it.table == table && it.cooked == 0L }
         // 조리 전에 빠진 메뉴는 조리 안 된 티켓에서 뺍니다.
@@ -97,9 +94,10 @@ class Kitchen(context: Context) {
         }
         if (added.isNotEmpty()) {
             if (open != null) added.forEach { (k, q) -> open.items[k] = (open.items[k] ?: 0) + q }
-            else tickets += Ticket(nextId++, table, added, true, now)
+            else if (needsCooking(added)) tickets += Ticket(nextId++, table, added, true, now)
         }
-        tickets.removeAll { it.items.isEmpty() }
+        // 조리할 메뉴가 하나도 안 남은 조리 전 티켓은 지웁니다.
+        tickets.removeAll { it.cooked == 0L && !needsCooking(it.items) }
         save()
         return anyAdded
     }
@@ -133,7 +131,7 @@ class Kitchen(context: Context) {
         val last = JSONObject()
         lastItems.forEach { (t, m) -> last.put(t, JSONObject(m as Map<*, *>)) }
         snapshot = JSONObject().put("tickets", arr)
-            .put("low", JSONArray(LOW)).put("batch", JSONArray(BATCH)).toString()
+            .put("low", JSONArray(LOW)).put("extra", JSONArray(EXTRA)).put("batch", JSONArray(BATCH)).toString()
         prefs.edit().putString("tickets", arr.toString()).putString("last", last.toString())
             .putLong("nextId", nextId).apply()
     }

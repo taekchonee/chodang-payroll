@@ -39,6 +39,7 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:stick
 .it.batchy .qty{background:#633806;color:#FAC775}
 .it.dim{color:#A8ABB5}
 .it.dim .qty{color:#A8ABB5}
+.ext{font-size:15px;color:#888780;padding:4px 16px 0;line-height:1.5}
 .done{margin:auto 14px 14px;height:62px;border-radius:12px;border:none;background:var(--btn);color:#fff;font-size:21px;font-weight:700;cursor:pointer}
 .done:active{background:#0F6E56}
 footer{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--line);background:#0B0D12;min-height:54px}
@@ -67,10 +68,11 @@ footer{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px 
 <div id="grid"></div>
 <footer><span class="sep">조리완료 · 서빙 대기</span><div id="serve"></div></footer>
 <script>
-let state={tickets:[],low:[],batch:[]},offset=0,lastOk=0,seen=null,audio=null;
+let state={tickets:[],low:[],batch:[],extra:[]},offset=0,lastOk=0,seen=null,audio=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const isLow=n=>state.low.some(k=>n.includes(k));
+const isExtra=n=>(state.extra||[]).some(k=>n.includes(k));
 const isBatch=n=>state.batch.some(k=>n.includes(k));
 function col(s,add){if(add)return'#EF9F27';return s>=900?'#E24B4A':s>=480?'#EF9F27':'#5DCAA5'}
 function fmt(s){s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
@@ -103,10 +105,11 @@ function render(){
       '<div class="top"><div>'+tag+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
       '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+fmt(s)+'</span><small>경과</small></div></div>'+
       '<div class="prog"><i style="background:'+c+';width:'+Math.min(100,s/1200*100)+'%"></i></div>'+
-      t.items.map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(t.add?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')+
+      t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(t.add?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')+
+      (t.items.some(([n])=>isExtra(n))?'<div class="ext">'+t.items.filter(([n])=>isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</div>':'')+
       '<div style="height:10px"></div><button class="done" data-id="'+t.id+'">조리완료</button></div>'
   }).join(''):'<div class="empty">조리할 주문이 없습니다</div>';
-  $('serve').innerHTML=done.map(t=>'<div class="chip"><b>'+esc(t.table)+'번</b><span class="d">'+t.items.map(([n,q])=>esc(n)+' '+q).join(' · ')+'</span><span style="color:var(--sub);font-size:12px">'+Math.floor((now()-t.cooked)/60000)+'분 전</span><button class="undo" data-undo="'+t.id+'">되돌리기</button></div>').join('');
+  $('serve').innerHTML=done.map(t=>'<div class="chip"><b>'+esc(t.table)+'번</b><span class="d">'+t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</span><span style="color:var(--sub);font-size:12px">'+Math.floor((now()-t.cooked)/60000)+'분 전</span><button class="undo" data-undo="'+t.id+'">되돌리기</button></div>').join('');
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.done'),u=e.target.closest('.undo');
