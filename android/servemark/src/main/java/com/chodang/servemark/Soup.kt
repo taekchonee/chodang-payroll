@@ -223,17 +223,21 @@ class Soup(context: Context) {
         return true
     }
 
-    /** 아침: 오늘 시작 밥 솥 수 (0.5 단위). 반 솥이 있으면 그게 '지금' 솥 */
+    /**
+     * 솥 수 맞추기 (0.5 단위, 하루 중 언제든). 반 솥이 있으면 그게 '지금' 솥.
+     * 그날 처음이면 그때부터 셈 시작, 이미 세는 중이면 남은 밥만 맞춤(짓는 중인 밥·오늘 판매 기록은 그대로).
+     */
     @Synchronized fun riceStart(pots: Double): Boolean {
         if (pots < 0 || pots > 20) return false
         snapshot(RICE)
         val now = System.currentTimeMillis(); val per = rice().perPot.toDouble()
         val full = pots.toInt(); val part = pots - full
         val a = (if (part > 0.01) listOf(part * per) else emptyList()) + List(full) { per }
-        prefs.edit().putString("rice_day", today(now)).putFloat("rice_used", 0f).putLong("rice_start", now)
+        if (!started(RICE)) prefs.edit().putString("rice_day", today(now)).putFloat("rice_used", 0f).putLong("rice_start", now)
             .putString("rice_cook", "[]").putBoolean("alerted_rice", false).apply()
         saveRice(a)
-        Diag.add("공기밥 영업 시작: ${pots}솥")
+        Diag.add("공기밥 솥 수 맞춤: ${pots}솥")
+        checkRice(now)
         return true
     }
 
@@ -347,11 +351,16 @@ class Soup(context: Context) {
         val rc = rice()
         val o = JSONObject().put("key", RICE).put("kind", "rice").put("name", "공기밥").put("ready", rc.perPot > 0 && rc.menus.isNotEmpty())
             .put("started", started(RICE)).put("perPot", rc.perPot).put("cookMin", rc.cookMin).put("unit", "공기").put("say", rc.say)
+        // 아침 준비용: 최근 평일/주말 하루 평균 사용량
+        val wkToday = weekend(now)
+        val avgBowls = usage(0.0, 1440.0, wkToday)
+        o.put("weekend", wkToday).put("avgBowls", avgBowls.roundToInt())
+            .put("avgPots", if (rc.perPot > 0) (avgBowls / rc.perPot * 10).roundToInt() / 10.0 else 0.0)
         if (started(RICE)) {
             tick(now)
             val a = riceAmts()
             val pl = plan(now)
-            o.put("remain", a.sum().roundToInt())
+            o.put("remain", a.sum().roundToInt()).put("potsNow", (a.sum() / rc.perPot * 10).roundToInt() / 10.0)
                 .put("pots", JSONArray(a.map { (it / rc.perPot * 100).roundToInt().coerceIn(0, 100) }))
                 .put("cooking", JSONArray(cooking().map { kotlin.math.ceil(((it - now) / 60_000.0).coerceAtLeast(0.0)).toInt() }))
                 .put("toClose", pl.toClose.roundToInt()).put("runOut", pl.runOut).put("low", pl.low)

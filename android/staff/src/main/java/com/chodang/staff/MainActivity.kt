@@ -240,56 +240,72 @@ class MainActivity : Activity() {
         return card
     }
 
-    private var morningPots = 2.0
+    /** 솥 수 맞추기에서 직원이 ± 로 바꾼 값 (맞춤 누르기 전까지만, 없으면 포스기 값) */
+    private var riceEdit: Double? = null
 
-    /** 공기밥 카드: 아침엔 솥 수 입력, 영업 중엔 솥 그림 + 밥 짓기 판단 */
+    /** 공기밥 카드: 하루 종일 하나. 평균 안내 + 솥 그림 + 솥 수 맞추기 + 밥 짓기 판단 */
     private fun riceCard(o: JSONObject): View {
         val per = o.optInt("perPot", 17); val cookMin = o.optInt("cookMin", 40)
         if (!o.optBoolean("ready")) return cardBox(false, true).apply { addView(cardTop("공기밥", "설정 필요", "#6B7280")) }
-        if (!o.optBoolean("started")) {
-            val card = cardBox(false)
-            card.addView(text("공기밥 · 오늘 시작 밥", 18f, bold = true))
-            card.addView(text("영업 시작 전에 지금 있는 밥 양을 넣어 주세요", 13f).apply { setTextColor(Color.parseColor("#6B7280")) })
-            val pv = vessels(emptyList())
-            val value = text("", 24f, bold = true).apply { gravity = Gravity.CENTER }
-            val sub = text("", 13f).apply { gravity = Gravity.CENTER; setTextColor(Color.parseColor("#6B7280")) }
-            fun upd() {
-                val full = morningPots.toInt(); val half = morningPots - full > 0.01
-                pv.items = (List(full) { VesselView.Item("pot", 100, "${it + 1}솥", false, "rice") } +
-                    (if (half) listOf(VesselView.Item("pot", 50, "반 솥", false, "rice")) else emptyList()))
-                    .ifEmpty { listOf(VesselView.Item("pot", 0, "없음", false, "rice")) }
-                value.text = (if (half) "%.1f" else "%.0f").format(morningPots) + "솥"
-                sub.text = "약 ${(morningPots * per).toInt()}공기 · 0.5솥 단위"
-            }
-            card.addView(pv)
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            row.addView(button("−") { morningPots = (morningPots - 0.5).coerceAtLeast(0.0); upd() }, LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT))
-            row.addView(value, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(button("+") { morningPots = (morningPots + 0.5).coerceAtMost(8.0); upd() }, LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT))
-            card.addView(row); card.addView(sub)
-            card.addView(button("영업 시작") {
-                val p = morningPots
-                post("/api/rice/start?pots=$p", "rice", "공기밥 영업 시작 · ${"%.1f".format(p)}솥")
-            }.apply { setTextColor(Color.WHITE); background = round("#111827", "#111827") })
-            upd()
-            return card
-        }
-        val low = o.optBoolean("low"); val remain = o.optInt("remain")
-        val card = cardBox(low)
-        card.addView(cardTop("공기밥", if (low) "밥 지으세요" else "약 ${remain}공기", if (low) "#DC2626" else "#111827"))
+        val started = o.optBoolean("started")
+        val low = started && o.optBoolean("low"); val remain = o.optInt("remain")
+        val card = cardBox(low).apply { if (!started) background = round("#FFFFFF", "#F59E0B", 2) }
+        card.addView(cardTop("공기밥",
+            if (!started) "오늘 밥 양을 맞춰 주세요" else if (low) "밥 지으세요" else "약 ${remain}공기",
+            if (!started) "#B45309" else if (low) "#DC2626" else "#111827"))
         if (low) card.addView(text("약 ${remain}공기 남음", 15f, bold = true).apply { setTextColor(Color.parseColor("#DC2626")) })
+        if (o.optDouble("avgPots", 0.0) > 0) card.addView(text(
+            "최근 ${if (o.optBoolean("weekend")) "주말" else "평일"}의 평균 밥 사용량은 ${"%.1f".format(o.optDouble("avgPots"))}솥입니다 (약 ${o.optInt("avgBowls")}공기)", 14f, bold = true).apply {
+            setTextColor(Color.parseColor("#1D4ED8")); setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = round("#EFF6FF", "#BFDBFE")
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
+        })
+        // 솥 수 맞추기: 맞춤 전에는 그림이 ± 값 미리보기
+        val server = if (started) Math.round(o.optDouble("potsNow", 0.0) * 2) / 2.0 else 2.0
+        var want = riceEdit ?: server
+        val pv = vessels(emptyList())
+        val value = text("", 22f, bold = true).apply { gravity = Gravity.CENTER }
         val pots = o.optJSONArray("pots"); val cooking = o.optJSONArray("cooking")
         val list = (0 until (pots?.length() ?: 0)).map { i ->
-            val pct = pots!!.getInt(i)
-            VesselView.Item("pot", pct, if (i == 0) "지금" else "${i + 1}솥", i == 0, "rice", idx = i)
+            VesselView.Item("pot", pots!!.getInt(i), if (i == 0) "지금" else "${i + 1}솥", i == 0, "rice", idx = i)
         } + (0 until (cooking?.length() ?: 0)).map { i -> VesselView.Item("cook", 0, "짓는 중", false, "rice", "${cooking!!.getInt(i)}분") }
-        card.addView(vessels(list).apply {
-            onLongPressItem = { item ->
+        val applyBtn = button("맞춤") {
+            val p = want; riceEdit = null
+            post("/api/rice/start?pots=$p", "rice", "공기밥 ${"%.1f".format(p)}솥으로 맞춤")
+        }
+        fun upd() {
+            val editing = !started || riceEdit != null
+            if (editing) {
+                val full = want.toInt(); val half = want - full > 0.01
+                pv.items = ((if (half) listOf(VesselView.Item("pot", 50, "반 솥", false, "rice")) else emptyList()) +
+                    List(full) { VesselView.Item("pot", 100, "${it + 1}솥", false, "rice") })
+                    .ifEmpty { listOf(VesselView.Item("pot", 0, "없음", false, "rice")) }
+            } else pv.items = list
+            value.text = (if (want - want.toInt() > 0.01) "%.1f" else "%.0f").format(want) + "솥"
+            val dark = editing
+            applyBtn.setTextColor(Color.parseColor(if (dark) "#FFFFFF" else "#111827"))
+            applyBtn.background = round(if (dark) "#111827" else "#FFFFFF", if (dark) "#111827" else "#D1D5DB")
+        }
+        pv.onLongPressItem = { item ->
+            if (started && riceEdit == null) {
                 val rest = list.filter { it.type == "pot" }.sumOf { x -> per * x.pct / 100.0 } - per * item.pct / 100.0
                 editAmount("rice", "공기밥 · ${if (item.idx == 0) "지금 솥" else "${item.idx + 1}번째 솥"}", item, per.toDouble(), rest, "공기")
             }
-        })
-        card.addView(text("솥을 길게 누르면 남은 양을 고칠 수 있어요", 12f).apply { setTextColor(Color.parseColor("#6B7280")) })
+        }
+        card.addView(pv)
+        if (started) card.addView(text("솥을 길게 누르면 % 를 고칠 수 있어요", 12f).apply { setTextColor(Color.parseColor("#6B7280")) })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        row.addView(text("솥 수", 15f, bold = true).apply { setPadding(0, dp(8), dp(8), 0) })
+        row.addView(button("−") { want = (want - 0.5).coerceAtLeast(0.0); riceEdit = want; upd() }, LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.WRAP_CONTENT))
+        row.addView(value, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { topMargin = dp(8) })
+        row.addView(button("+") { want = (want + 0.5).coerceAtMost(8.0); riceEdit = want; upd() }, LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.WRAP_CONTENT))
+        row.addView(applyBtn, LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        card.addView(row)
+        upd()
+        if (!started) {
+            card.addView(text("솥 수를 맞추면 그때부터 판매만큼 셉니다", 13f).apply { setTextColor(Color.parseColor("#6B7280")); setPadding(0, dp(6), 0, 0) })
+            return card
+        }
         val runOut = o.optInt("runOut", -1)
         val status = when {
             o.optBoolean("closed") -> "영업 마감 시간"
@@ -462,7 +478,7 @@ class MainActivity : Activity() {
         col.addView(card(
             "이 앱이 하는 일",
             "• 매장 와이파이에 있을 때만, 포스기의 주방 안내(\"신규주문\" 등)를 받아 이 폰의 음성으로 읽어 줍니다.\n" +
-            "• 국·공기밥 남은 양을 보여 주고, '새로 엶'을 누르면 포스기에 알립니다.\n" +
+            "• 국·공기밥 남은 양을 그림으로 보여 주고, 조리완료·새로 지음·남은 양 고치기를 포스기에 알립니다.\n" +
             "• 유튜브 등을 보고 있어도 안내할 때만 그 소리를 잠깐 멈추고, 끝나면 원래대로 돌아갑니다.\n" +
             "• 매장 와이파이가 아니면(퇴근 후 등) 아무것도 하지 않고 기다립니다."))
         col.addView(card(
