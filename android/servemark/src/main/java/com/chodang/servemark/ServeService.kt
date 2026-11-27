@@ -50,7 +50,10 @@ class ServeService : AccessibilityService() {
     private var targetVisible = false
     private val scanRunnable = Runnable { scan() }
     private val ticker = object : Runnable {
-        override fun run() { scan(); handler.postDelayed(this, 3000) }
+        override fun run() {
+            if (::kitchen.isInitialized) kitchen.expire(System.currentTimeMillis())
+            scan(); handler.postDelayed(this, 3000)
+        }
     }
 
     override fun onServiceConnected() {
@@ -104,6 +107,10 @@ class ServeService : AccessibilityService() {
         if (e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) onLongPress(e)
         if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             lastWindowClass = e.className?.toString() ?: ""
+            // 이지포스의 "주문을 취소하시겠습니까?" 창 → 곧 테이블이 비면 결제가 아니라 취소로 봅니다.
+            if (lastWindowClass.contains("AlertDialog") && e.text.joinToString(" ").contains("취소")) {
+                cancelPromptAt = System.currentTimeMillis()
+            }
             if (System.currentTimeMillis() < closeDeadline) handler.post(closeOrderScreen)
         }
 
@@ -213,14 +220,6 @@ class ServeService : AccessibilityService() {
 
         // 테이블 화면이 확실할 때만(5개 이상 보일 때) 결제 완료·새 주문·추가 주문을 판단합니다.
         if (visibleTables.size >= 5) {
-            val byLabel = visibleTables.associateBy { it.label }
-            marks.all().forEach { m ->
-                val t = byLabel[m]
-                if (t != null && !t.occupied) {
-                    marks.remove(m)
-                    Diag.add("$m 결제 완료 → 서빙완료 표시 삭제")
-                }
-            }
             updateQueue()
         }
         overlay?.invalidate()
@@ -250,17 +249,53 @@ class ServeService : AccessibilityService() {
         return m
     }
 
+    /** 방금 비워진 테이블: 몇 초 기다려 '이동'인지 '취소'인지 '결제'인지 가립니다. */
+    private data class Gone(val items: Map<String, Int>, val at: Long)
+    private val gone = mutableMapOf<String, Gone>()
+    @Volatile private var cancelPromptAt = 0L
+
+    /** 비워진 테이블 정리: 취소 창이 떴었으면 주방에 '주문 취소', 아니면 결제로 보고 조용히 정리 */
+    private fun finishGone(table: String, g: Gone) {
+        gone.remove(table)
+        val cancelled = g.at - cancelPromptAt in 0..60_000
+        if (cancelled) {
+            kitchen.voidTable(table, g.at)
+            Diag.add("$table 주문 취소 → 주방에 취소 표시")
+        } else {
+            kitchen.clearTable(table, forget = true)
+            if (marks.has(table)) Diag.add("$table 결제 완료 → 서빙완료 표시 삭제")
+        }
+        marks.remove(table)
+        marks.forgetOrder(table)
+    }
+
     private fun updateQueue() {
         val now = System.currentTimeMillis()
+        val byLabel = visibleTables.associateBy { it.label }
+        // 1) 비워진 테이블 기록 (이전에 주문이 있었던 곳)
         visibleTables.forEach { t ->
-            if (t.label.startsWith("포장")) return@forEach
-            if (!t.occupied) {
-                marks.forgetOrder(t.label)
-                if (kitchen.knownTable(t.label)) kitchen.clearTable(t.label, forget = true)
-                return@forEach
+            if (t.label.startsWith("포장") || t.occupied || t.label in gone) return@forEach
+            if (kitchen.knownTable(t.label) || marks.orderSince(t.label) != 0L) {
+                gone[t.label] = Gone(kitchen.itemsOf(t.label), now)
             }
+        }
+        visibleTables.forEach { t ->
+            if (t.label.startsWith("포장") || !t.occupied) return@forEach
             val amount = amountOf(t)
             val items = itemsOf(t)
+            // 2) 새로 주문이 보인 테이블이 방금 비워진 테이블과 메뉴가 같으면 → 테이블 이동
+            if (marks.orderSince(t.label) == 0L && !kitchen.knownTable(t.label) && items.isNotEmpty()) {
+                val from = gone.entries.firstOrNull { (_, g) -> g.items == items }?.key
+                if (from != null) {
+                    gone.remove(from)
+                    kitchen.move(from, t.label)
+                    marks.move(from, t.label)
+                    Diag.add("테이블 이동: $from → ${t.label}")
+                    return@forEach
+                }
+            }
+            // 다시 주문이 생긴 테이블은 '비워짐' 기록을 먼저 정리
+            gone[t.label]?.let { finishGone(t.label, it) }
             val seen = marks.orderSince(t.label)
             if (seen == 0L || !kitchen.knownTable(t.label)) {
                 if (seen == 0L) {
@@ -279,6 +314,10 @@ class ServeService : AccessibilityService() {
             } else if (amount < marks.lastAmount(t.label)) {
                 marks.setAmount(t.label, amount)  // 일부 취소
             }
+        }
+        // 3) 6초 지나도 이동으로 이어지지 않은 비워진 테이블 → 취소/결제로 정리
+        gone.entries.toList().forEach { (table, g) ->
+            if (now - g.at > 6_000 && byLabel[table]?.occupied != true) finishGone(table, g)
         }
         val marked = marks.all()
         queue = visibleTables

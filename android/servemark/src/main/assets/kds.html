@@ -22,8 +22,9 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:stick
 .batch:empty{display:none}
 .batch div{background:#2A1F0A;border:1px solid #633806;color:#FAC775;border-radius:12px;padding:10px 22px;font-size:24px;font-weight:700}
 .batch span{font-size:15px;color:#BA7517;font-weight:400;margin-right:8px}
-#grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));align-content:start;gap:14px;padding:0 16px 14px}
+#grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));align-content:start;grid-auto-rows:max-content;gap:14px;padding:0 16px 14px}
 .tk{background:var(--card);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tk>*{flex-shrink:0}
 .tk .bar{height:5px}
 .top{display:flex;align-items:flex-start;padding:14px 16px 8px}
 .tag{font-size:14px;padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:3px}
@@ -39,6 +40,12 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:stick
 .it.batchy .qty{background:#633806;color:#FAC775}
 .it.dim{color:#A8ABB5}
 .it.dim .qty{color:#A8ABB5}
+.it.cx .nm{text-decoration:line-through;color:#F09595}
+.it.cx .qty{background:#501313;color:#F7C1C1;margin-left:0}
+.cxl{font-size:13px;color:#fff;background:#E24B4A;border-radius:6px;padding:1px 7px;margin-left:auto;margin-right:8px}
+.tk.void{background:#2A1416;outline:2px solid #E24B4A}
+.voidmsg{margin:auto 14px 14px;height:62px;border-radius:12px;background:#501313;color:#F7C1C1;font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.chipcx{outline:1px solid #A32D2D}
 .ext{font-size:15px;color:#888780;padding:4px 16px 0;line-height:1.5}
 .done{margin:auto 14px 14px;height:62px;border-radius:12px;border:none;background:var(--btn);color:#fff;font-size:21px;font-weight:700;cursor:pointer}
 .done:active{background:#0F6E56}
@@ -68,7 +75,7 @@ footer{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px 
 <div id="grid"></div>
 <footer><span class="sep">조리완료 · 서빙 대기</span><div id="serve"></div></footer>
 <script>
-let state={tickets:[],low:[],batch:[],extra:[]},offset=0,lastOk=0,seen=null,audio=null;
+let lastCancel=0,state={tickets:[],low:[],batch:[],extra:[]},offset=0,lastOk=0,seen=null,audio=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const isLow=n=>state.low.some(k=>n.includes(k));
@@ -83,33 +90,45 @@ async function load(){
   try{
     const r=await fetch('/api/state',{cache:'no-store'});const j=await r.json();
     offset=j.now-Date.now();state=j;lastOk=Date.now();
-    const ids=new Set(j.tickets.filter(t=>!t.cooked).map(t=>t.id));
-    if(seen&&[...ids].some(id=>!seen.has(id)))beep();
+    const ids=new Set(j.tickets.filter(t=>!t.cooked&&!t.voided).map(t=>t.id));
+    const cx=Math.max(0,...j.tickets.map(t=>Math.max(t.cancelAt||0,t.voided||0)));
+    if(seen){if([...ids].some(id=>!seen.has(id)))beep();if(cx>lastCancel)alarm()}
+    lastCancel=cx;
     const sig=JSON.stringify(j.tickets);if(sig!==window._sig){window._sig=sig;render()}
     seen=ids;
   }catch(e){}
 }
+function alarm(){if(!audio)return;[0,.25,.5].forEach(d=>{const o=audio.createOscillator(),g=audio.createGain();o.type='square';o.frequency.value=440;o.connect(g);g.connect(audio.destination);const t=audio.currentTime+d;g.gain.setValueAtTime(.18,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2)})}
+function kindTag(t,rank){
+  if(t.voided)return'<span class="tag" style="background:#E24B4A;color:#fff">주문 취소</span>';
+  if(t.kind==='change')return'<span class="tag" style="background:#26215C;color:#CECBF6">변경</span>';
+  if(t.add)return'<span class="tag" style="background:#412402;color:#FAC775">추가 주문</span>';
+  return '<span class="tag" style="background:'+(rank==0?'#501313':'#262A35')+';color:'+(rank==0?'#F7C1C1':'#B4B2A9')+'">'+(rank==0?'1 · 다음':(rank+1))+'</span>';
+}
+const moved=t=>t.movedFrom?'<span class="tag" style="background:#04342C;color:#9FE1CB;margin-left:4px">'+esc(t.movedFrom)+'번→이동</span>':'';
+const cxRows=t=>(t.cancelled||[]).filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it cx"><span class="nm">'+esc(n)+'</span><span class="cxl">취소</span><span class="qty">'+q+'</span></div>').join('');
 function render(){
-  const open=state.tickets.filter(t=>!t.cooked).sort((a,b)=>(b.add-a.add)||(a.created-b.created));
-  const done=state.tickets.filter(t=>t.cooked).sort((a,b)=>b.cooked-a.cooked);
-  $('cq').textContent=open.length;$('cs').textContent=done.length;
-  const sum={};open.forEach(t=>t.items.forEach(([n,q])=>{if(isBatch(n))sum[n]=(sum[n]||0)+q}));
+  const pri=t=>t.voided?0:(t.add?1:2);
+  const open=state.tickets.filter(t=>!t.cooked||t.voided).sort((a,b)=>(pri(a)-pri(b))||(a.created-b.created));
+  const done=state.tickets.filter(t=>t.cooked&&!t.voided).sort((a,b)=>b.cooked-a.cooked);
+  $('cq').textContent=open.filter(t=>!t.voided).length;$('cs').textContent=done.length;
+  const sum={};open.filter(t=>!t.voided).forEach(t=>t.items.forEach(([n,q])=>{if(isBatch(n))sum[n]=(sum[n]||0)+q}));
   $('batch').innerHTML=Object.entries(sum).map(([n,q])=>'<div><span>묶음 조리</span>'+esc(n)+' '+q+'</div>').join('');
   let rank=0;
   $('grid').innerHTML=open.length?open.map(t=>{
-    const s=(now()-t.created)/1000,c=col(s,t.add);
-    let tag;
-    if(t.add)tag='<span class="tag" style="background:#412402;color:#FAC775">추가 주문</span>';
-    else{tag='<span class="tag" style="background:'+(rank==0?'#501313':'#262A35')+';color:'+(rank==0?'#F7C1C1':'#B4B2A9')+'">'+(rank==0?'1 · 다음':(rank+1))+'</span>';rank++}
-    return '<div class="tk" data-c="'+t.created+'" data-a="'+(t.add?1:0)+'"><div class="bar" style="background:'+c+'"></div>'+
-      '<div class="top"><div>'+tag+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
-      '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+fmt(s)+'</span><small>경과</small></div></div>'+
-      '<div class="prog"><i style="background:'+c+';width:'+Math.min(100,s/1200*100)+'%"></i></div>'+
-      t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(t.add?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')+
-      (t.items.some(([n])=>isExtra(n))?'<div class="ext">'+t.items.filter(([n])=>isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</div>':'')+
-      '<div style="height:10px"></div><button class="done" data-id="'+t.id+'">조리완료</button></div>'
+    const s=(now()-t.created)/1000,c=t.voided?'#E24B4A':col(s,t.add);
+    const tag=kindTag(t,rank);if(!t.voided&&!t.add)rank++;
+    const plus=(t.add&&t.kind!=='change')||t.kind==='change';
+    const items=t.voided?(t.items.concat(t.cancelled||[])).filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it cx"><span class="nm">'+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')
+      :t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+(isLow(n)?' dim':'')+'"><span class="nm">'+(plus?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</span><span class="qty">'+q+'</span></div>').join('')+cxRows(t);
+    return '<div class="tk'+(t.voided?' void':'')+'"'+(t.voided?'':' data-c="'+t.created+'" data-a="'+(t.add?1:0)+'"')+'><div class="bar" style="background:'+c+'"></div>'+
+      '<div class="top"><div>'+tag+moved(t)+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
+      '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+(t.voided?'취소':fmt(s))+'</span><small>'+(t.voided?'조리 중지':'경과')+'</small></div></div>'+
+      '<div class="prog"><i style="background:'+c+';width:'+(t.voided?100:Math.min(100,s/1200*100))+'%"></i></div>'+items+
+      (!t.voided&&t.items.some(([n])=>isExtra(n))?'<div class="ext">'+t.items.filter(([n])=>isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</div>':'')+
+      '<div style="height:10px"></div>'+(t.voided?'<div class="voidmsg">주문이 취소되었습니다</div>':'<button class="done" data-id="'+t.id+'">조리완료</button>')+'</div>'
   }).join(''):'<div class="empty">조리할 주문이 없습니다</div>';
-  $('serve').innerHTML=done.map(t=>'<div class="chip"><b>'+esc(t.table)+'번</b><span class="d">'+t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</span><span style="color:var(--sub);font-size:12px">'+Math.floor((now()-t.cooked)/60000)+'분 전</span><button class="undo" data-undo="'+t.id+'">되돌리기</button></div>').join('');
+  $('serve').innerHTML=done.map(t=>'<div class="chip'+((t.cancelled||[]).length?' chipcx':'')+'"><b>'+esc(t.table)+'번</b><span class="d">'+t.items.filter(([n])=>!isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+((t.cancelled||[]).filter(([n])=>!isExtra(n)).length?' <s style="color:#F09595">'+t.cancelled.filter(([n])=>!isExtra(n)).map(([n,q])=>esc(n)+' '+q).join(' · ')+'</s> <span style="color:#F09595">취소</span>':'')+'</span><span style="color:var(--sub);font-size:12px">'+Math.floor((now()-t.cooked)/60000)+'분 전</span><button class="undo" data-undo="'+t.id+'">되돌리기</button></div>').join('');
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.done'),u=e.target.closest('.undo');

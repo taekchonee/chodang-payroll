@@ -34,6 +34,19 @@ class Marks(context: Context) {
         if (orderSince(t) != 0L) prefs.edit().remove("seen:$t").remove("amt:$t").remove("prio:$t").apply()
     }
 
+    /** 테이블 이동: 서빙완료 표시와 순서 기록을 새 테이블로 옮깁니다. */
+    fun move(from: String, to: String) {
+        val wasMarked = has(from)
+        val e = prefs.edit()
+        listOf("seen:", "amt:", "prio:").forEach { k ->
+            if (prefs.contains(k + from)) e.putLong(k + to, prefs.getLong(k + from, 0L))
+            e.remove(k + from)
+        }
+        e.apply()
+        val s = all() - from
+        save(if (wasMarked) s + to else s)
+    }
+
     /** 진단 표시(화면 왼쪽 위 신호 기록)를 켤지 */
     var diagOverlay: Boolean
         get() = prefs.getBoolean("diag", false)
