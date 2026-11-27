@@ -147,6 +147,7 @@ class ServeService : AccessibilityService() {
         val on = marks.toggle(label)
         Diag.add("길게 누름: $label 서빙완료 ${if (on) "표시" else "해제"}")
         overlay?.invalidate()
+        handler.post(scanRunnable)
         // 손을 떼면 이지포스가 일반 터치로도 받아 주문 화면(매출등록)을 엽니다 → 4초 안에 열리면 X 를 한 번 눌러 닫습니다.
         closeDeadline = System.currentTimeMillis() + 4000
     }
@@ -202,7 +203,7 @@ class ServeService : AccessibilityService() {
         visibleTables = found.groupBy { it.label }.map { (_, list) -> list.minByOrNull { it.bounds.width() * it.bounds.height() }!! }
         Diag.lastScan = "테이블 ${visibleTables.size}개: " + visibleTables.joinToString(" ") { it.label + if (it.occupied) "(주문)" else "" }
 
-        // 테이블 화면이 확실할 때만(5개 이상 보일 때) 결제 완료를 판단해 표시를 지웁니다.
+        // 테이블 화면이 확실할 때만(5개 이상 보일 때) 결제 완료·새 주문·추가 주문을 판단합니다.
         if (visibleTables.size >= 5) {
             val byLabel = visibleTables.associateBy { it.label }
             marks.all().forEach { m ->
@@ -212,8 +213,50 @@ class ServeService : AccessibilityService() {
                     Diag.add("$m 결제 완료 → 서빙완료 표시 삭제")
                 }
             }
+            updateQueue()
         }
         overlay?.invalidate()
+    }
+
+    // ------------------------------------------------------------------
+    // 서빙 순서: 주문이 처음 보인 순서. 서빙을 끝낸 테이블에 추가 주문이 오면 맨 앞(우선).
+    // ------------------------------------------------------------------
+
+    /** 서빙을 기다리는 테이블 (앞이 다음 서빙). 포장 제외. */
+    @Volatile var queue: List<String> = emptyList()
+        private set
+
+    private fun amountOf(t: Table): Long =
+        t.texts.mapNotNull { AMOUNT.find(it)?.value?.filter(Char::isDigit)?.toLongOrNull() }.maxOrNull() ?: 0L
+
+    private fun updateQueue() {
+        val now = System.currentTimeMillis()
+        visibleTables.forEach { t ->
+            if (t.label.startsWith("포장")) return@forEach
+            if (!t.occupied) { marks.forgetOrder(t.label); return@forEach }
+            val amount = amountOf(t)
+            val seen = marks.orderSince(t.label)
+            if (seen == 0L) {
+                marks.startOrder(t.label, now, amount)
+                Diag.add("${t.label} 새 주문 → 서빙 순서에 추가")
+            } else if (amount > marks.lastAmount(t.label)) {
+                marks.setAmount(t.label, amount)
+                if (marks.has(t.label)) {
+                    // 서빙 끝난 테이블의 추가 주문 → 표시를 풀고 맨 앞으로
+                    marks.remove(t.label)
+                    marks.setPriority(t.label, now)
+                    Diag.add("${t.label} 추가 주문 → 서빙완료 해제, 우선 서빙")
+                }
+            } else if (amount < marks.lastAmount(t.label)) {
+                marks.setAmount(t.label, amount)  // 일부 취소
+            }
+        }
+        val marked = marks.all()
+        queue = visibleTables
+            .filter { it.occupied && !it.label.startsWith("포장") && it.label !in marked }
+            .map { it.label }
+            .sortedWith(compareBy<String>({ if (marks.priority(it) > 0) 0 else 1 },
+                { marks.priority(it).takeIf { p -> p > 0 } ?: marks.orderSince(it) }))
     }
 
     // ------------------------------------------------------------------
@@ -363,6 +406,51 @@ class ServeService : AccessibilityService() {
         private val diagBg = Paint().apply { color = Color.parseColor("#CC000000") }
         private val diagText = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#7CFC9A"); textSize = 10 * d }
         private val loc = IntArray(2)
+        private val redFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E6C62828") }
+        private val redStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#C62828"); style = Paint.Style.STROKE; strokeWidth = 3 * d
+        }
+        private val badge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1E2430") }
+        private val badgeText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 14 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+        }
+        private val boxFill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val boxText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 17 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+        }
+
+        /** 서빙 순서 번호, 다음 서빙(빨간 띠), 남은 서빙 수 */
+        private fun drawQueue(c: Canvas) {
+            val q = queue
+            val byLabel = visibleTables.associateBy { it.label }
+            q.forEachIndexed { i, label ->
+                val t = byLabel[label] ?: return@forEachIndexed
+                val r = RectF(t.bounds).apply { offset(-loc[0].toFloat(), -loc[1].toFloat()) }
+                if (i == 0) {
+                    c.drawRect(r, redStroke)
+                    val h = minOf(28 * d, r.height() / 2.5f)
+                    val band = RectF(r.left, r.bottom - h, r.right, r.bottom)
+                    c.drawRect(band, redFill)
+                    c.drawText("다음 서빙", band.centerX(), band.centerY() + text.textSize / 3, text)
+                }
+                val rad = 13 * d
+                val cx = r.left + rad + 4 * d
+                val cy = r.top + rad + 4 * d
+                badge.color = Color.parseColor(if (i == 0) "#C62828" else "#1E2430")
+                c.drawCircle(cx, cy, rad, badge)
+                c.drawText("${i + 1}", cx, cy + badgeText.textSize / 3, badgeText)
+            }
+            // 남은 서빙 수: 포장0 칸 아래 빈 곳
+            val anchor = visibleTables.firstOrNull { it.label.startsWith("포장") }
+            val box = if (anchor != null) {
+                val a = RectF(anchor.bounds).apply { offset(-loc[0].toFloat(), -loc[1].toFloat()) }
+                RectF(a.left, a.bottom + 14 * d, a.right, a.bottom + 14 * d + 52 * d)
+            } else RectF(width - 190 * d, height - 70 * d, width - 16 * d, height - 18 * d)
+            boxFill.color = Color.parseColor(if (q.isEmpty()) "#15803D" else "#C62828")
+            c.drawRoundRect(box, 10 * d, 10 * d, boxFill)
+            c.drawText(if (q.isEmpty()) "남은 서빙 없음" else "서빙 대기 ${q.size}",
+                box.centerX(), box.centerY() + boxText.textSize / 3, boxText)
+        }
 
         override fun onDraw(c: Canvas) {
             getLocationOnScreen(loc)
@@ -376,6 +464,7 @@ class ServeService : AccessibilityService() {
                     c.drawRect(band, fill)
                     c.drawText("서빙완료", band.centerX(), band.centerY() + text.textSize / 3, text)
                 }
+                if (visibleTables.size >= 5) drawQueue(c)
             }
             if (marks.diagOverlay) {
                 val lines = listOf(Diag.lastScan.take(70)) + Diag.recent(6).map { it.take(70) }

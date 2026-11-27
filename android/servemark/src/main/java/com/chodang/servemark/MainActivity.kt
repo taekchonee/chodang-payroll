@@ -82,6 +82,7 @@ class MainActivity : Activity() {
         info.text = buildString {
             append("이지포스 앱: ").append(marks.targetPackage.ifEmpty { "(아직 못 찾음 — 이지포스를 한 번 눌러 주세요)" }).append('\n')
             append("서빙완료 표시 중: ").append(marks.all().sorted().joinToString(", ").ifEmpty { "없음" }).append('\n')
+            append("서빙 순서: ").append(ServeService.instance?.queue?.joinToString(" → ")?.ifEmpty { "남은 서빙 없음" } ?: "-").append('\n')
             append("마지막 화면 읽기: ").append(Diag.lastScan).append('\n')
             append("신호가 온 앱: ").append(Diag.packages.entries.joinToString(", ") { "${it.key}(${it.value})" })
         }

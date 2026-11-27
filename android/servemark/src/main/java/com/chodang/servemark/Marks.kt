@@ -10,7 +10,7 @@ class Marks(context: Context) {
 
     fun has(table: String) = table in all()
 
-    fun add(table: String) = save(all() + table)
+    fun add(table: String) { save(all() + table); prefs.edit().remove("prio:$table").apply() }
     fun remove(table: String) = save(all() - table)
     fun toggle(table: String): Boolean {
         val on = !has(table)
@@ -20,6 +20,19 @@ class Marks(context: Context) {
     fun clear() = save(emptySet())
 
     private fun save(s: Set<String>) { prefs.edit().putStringSet("tables", s).apply() }
+
+    // ---- 서빙 순서 (테이블별 주문 시작 시각·금액·우선 시각) ----
+    fun orderSince(t: String) = prefs.getLong("seen:$t", 0L)
+    fun lastAmount(t: String) = prefs.getLong("amt:$t", 0L)
+    fun priority(t: String) = prefs.getLong("prio:$t", 0L)
+    fun startOrder(t: String, at: Long, amount: Long) {
+        prefs.edit().putLong("seen:$t", at).putLong("amt:$t", amount).remove("prio:$t").apply()
+    }
+    fun setAmount(t: String, amount: Long) { prefs.edit().putLong("amt:$t", amount).apply() }
+    fun setPriority(t: String, at: Long) { prefs.edit().putLong("prio:$t", at).apply() }
+    fun forgetOrder(t: String) {
+        if (orderSince(t) != 0L) prefs.edit().remove("seen:$t").remove("amt:$t").remove("prio:$t").apply()
+    }
 
     /** 진단 표시(화면 왼쪽 위 신호 기록)를 켤지 */
     var diagOverlay: Boolean
