@@ -84,7 +84,8 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                 send(sock, 200, "text/html; charset=utf-8", sayPage().toByteArray())
             method == "POST" && path == "/api/say" -> {
                 val t = q("text")?.trim().orEmpty().take(200)
-                if (t.isNotEmpty()) announcer.say(t)
+                val to = q("to") ?: "both"   // both / mini / phones
+                if (t.isNotEmpty()) announcer.say(t, mini = to != "phones", phones = to != "mini")
                 send(sock, 200, "application/json", "{\"ok\":${t.isNotEmpty()}}".toByteArray())
             }
             else -> send(sock, 404, "text/plain", "not found".toByteArray())
@@ -104,11 +105,15 @@ textarea{width:100%;box-sizing:border-box;height:110px;font-size:20px;border-rad
 .p{display:block;width:100%;margin-top:8px;height:50px;border-radius:10px;border:1px solid #262A35;background:#181B23;color:#E8EAF0;font-size:17px;text-align:left;padding:0 14px}
 #m{margin-top:12px;color:#5DCAA5;min-height:20px}</style></head><body>
 <h1>직접 방송</h1><p>매장주방홈미니와 주방 직원 폰으로 보냅니다. 매장 와이파이에서만 됩니다.</p>
-<textarea id=t placeholder="보낼 문구"></textarea><button id=go>보내기</button><div id=m></div>
+<textarea id=t placeholder="보낼 문구"></textarea>
+<div style="margin-top:10px;font-size:17px"><label><input type=checkbox id=cm checked style="width:20px;height:20px;vertical-align:-4px"> 홈미니</label>
+&nbsp;&nbsp;<label><input type=checkbox id=cp checked style="width:20px;height:20px;vertical-align:-4px"> 직원 폰</label></div>
+<button id=go>보내기</button><div id=m></div>
 <p style="margin-top:18px">자주 쓰는 문구 (누르면 바로 보냄)</p>$presets
 <script>
 async function send(x){x=x.trim();if(!x)return;m.textContent='보내는 중…';
-try{const r=await fetch('/api/say?text='+encodeURIComponent(x),{method:'POST'});m.textContent=r.ok?'보냄: '+x:'실패'}catch(e){m.textContent='실패 (매장 와이파이인지 확인)'}}
+const to=cm.checked&&cp.checked?'both':cm.checked?'mini':cp.checked?'phones':'';if(!to){m.textContent='보낼 곳을 하나 이상 골라 주세요';return}
+try{const r=await fetch('/api/say?text='+encodeURIComponent(x)+'&to='+to,{method:'POST'});m.textContent=r.ok?'보냄: '+x:'실패'}catch(e){m.textContent='실패 (매장 와이파이인지 확인)'}}
 go.onclick=()=>{send(t.value);t.value=''};
 document.querySelectorAll('.p').forEach(b=>b.onclick=()=>send(b.textContent));
 </script></body></html>"""

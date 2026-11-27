@@ -74,15 +74,15 @@ class Announcer(context: Context) {
         phones.values.count { now - it < 90_000 }
     }
 
-    /** 문장 그대로 방송: 직원 폰은 항상, 홈미니(홈어시스턴트)는 켜져 있을 때 */
-    fun say(text: String) {
-        synchronized(lock) {
+    /** 문장 그대로 방송: phones=직원 폰, mini=홈미니(홈어시스턴트, 켜져 있을 때) */
+    fun say(text: String, mini: Boolean = true, phones: Boolean = true) {
+        if (phones) synchronized(lock) {
             seq++
             log.addLast(seq to text)
             while (log.size > 50) log.removeFirst()
             lock.notifyAll()
         }
-        if (!enabled) { Diag.add("주방 방송(폰만): \"$text\""); return }
+        if (!mini || !enabled) { Diag.add("주방 방송(폰만): \"$text\""); return }
         val target = url
         net.execute {
             val r = try {

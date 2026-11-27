@@ -73,6 +73,8 @@ class MainActivity : Activity() {
 
         // 직접 방송: 매장주방홈미니 + 주방 직원 폰으로 보냄 (매장 와이파이에서만)
         col.addView(section("직접 방송"))
+        val toMini = android.widget.CheckBox(this).apply { text = "홈미니"; textSize = 16f; isChecked = true }
+        val toPhones = android.widget.CheckBox(this).apply { text = "직원 폰"; textSize = 16f; isChecked = true }
         val sayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val sayInput = android.widget.EditText(this).apply { hint = "보낼 문구"; textSize = 16f; setSingleLine() }
         sayRow.addView(sayInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -80,10 +82,12 @@ class MainActivity : Activity() {
             val t = sayInput.text.toString().trim()
             val host = prefs.host
             if (t.isEmpty()) return@button
+            val to = when { toMini.isChecked && toPhones.isChecked -> "both"; toMini.isChecked -> "mini"; toPhones.isChecked -> "phones"; else -> "" }
+            if (to.isEmpty()) return@button toast("보낼 곳을 하나 이상 골라 주세요")
             if (host.isEmpty() || !AlertService.status.contains("받는 중")) return@button toast("포스기와 연결된 뒤에 보낼 수 있습니다 (표시등이 초록일 때)")
             kotlin.concurrent.thread {
                 val ok = runCatching {
-                    (java.net.URL("http://$host:${AlertService.PORT}/api/say?text=" + java.net.URLEncoder.encode(t, "UTF-8"))
+                    (java.net.URL("http://$host:${AlertService.PORT}/api/say?text=" + java.net.URLEncoder.encode(t, "UTF-8") + "&to=" + to)
                         .openConnection() as java.net.HttpURLConnection).run {
                         requestMethod = "POST"; connectTimeout = 2000; readTimeout = 4000
                         val c = responseCode; disconnect(); c == 200
@@ -94,7 +98,10 @@ class MainActivity : Activity() {
         }
         sayRow.addView(sendBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
         col.addView(sayRow)
-        col.addView(text("홈미니와 직원 폰 모두에서 나옵니다.", 13f).apply { setPadding(0, dp(4), 0, 0) })
+        val targets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, 0) }
+        targets.addView(toMini)
+        targets.addView(toPhones, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(20) })
+        col.addView(targets)
 
         col.addView(card(
             "이 앱이 하는 일",
