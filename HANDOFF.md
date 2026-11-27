@@ -1,8 +1,63 @@
-# 인수인계 메모 (클라우드 세션 → PC 세션)
+# 인수인계 메모
 
-새 세션에서는 이 파일과 `README.md`를 먼저 읽고 이어서 작업하세요.
+**새 세션은 이 파일 맨 위 "새 세션 시작 안내"부터 읽으세요.** 사용법은 `README.md`, 사장님 공통 규칙은 `%USERPROFILE%\.claude\CLAUDE.md`.
 
-## 목표
+## 새 세션 시작 안내 (2026-11-28 작성)
+
+### 다음 할 일
+아래 "다음 작업: 국 남은 양 알림" 절. 화면 구성은 사장님과 그림으로 확정했음(맨 위 줄 `주방 알림 · 🎧 소리 확인 · 🔔 종 칩 · ⚙️`, 탭 주방/방송, 국 칩 3개).
+
+### 사장님과 일하는 방식 (꼭 지킬 것)
+- 프로그래머가 아님. 쉬운 한국어, 결과·결정 위주로 짧게.
+- **화면·구성·흐름은 먼저 그림(visualize show_widget 목업)으로 보여 주고 확인 후 만든다.**
+- **사용량이 빠듯함**(2026-11-28 기준 주간 79% 사용, 수요일 23:59 리셋). 그래서:
+  - 시뮬레이션·가상 휴대폰 시험·RustDesk 조작은 최소로. **빌드 확인 + 배포까지만 하고 실제 시험은 사장님이 직접.**
+  - 작은 수정은 모아서 한 번에 빌드·배포. Sonnet 으로 충분.
+- 실제 발송·결제·삭제·외부 게시·관리자 권한·보안 설정 변경은 먼저 확인.
+- Gemini 따로 설계: 이번 주방 기능들은 "Gemini 없이"로 정함.
+
+### 사장님이 싫다고 한 것 / 정한 것
+- 주방 방송은 **주요 이벤트만**: 신규주문 → "신규주문", 메뉴 추가·취소 → "메뉴변경 발생", 제육불고기 다른 테이블 조리 대기 중 추가 → "제육 n개 추가". **메뉴 전부 읽기 X, 주문취소 방송 X, 테이블 이동 방송 X.**
+- 홀 포스기 화면엔 "조리완료" 표시 X(주방 태블릿에만). 조리완료 없이 서빙완료하면 주방 카드 삭제는 그대로 둠.
+- 조리완료 후 1분 지나도 서빙완료 안 되면 홀에 "서빙 확인" 깜빡임, 3분이면 자동 서빙완료.
+- 주방 화면 색: 5분 주황, 10분 빨강. 초당순두부는 같은 크기로 살짝 흐리게. 주류·음료·공기밥·할인은 카드 아래 작게, 이것만으론 카드 안 만듦. 제육불고기는 위에 묶음 합계(가운데, 조금 크게). 추가 주문은 구분선 아래 `+메뉴 (mm:ss)`.
+- 직원 폰 앱: 권한은 인터넷·알림뿐(마이크 X), 매장 와이파이일 때만 동작(받는 시간 설정 X), 안내 전 1.6초 멜로디, 안내 동안 다른 앱 소리 멈춤(볼륨 최대 옵션 X), **자주 쓰는 문구 X**, 직접 방송은 체크박스로 홈미니/직원 폰 선택.
+- 녹음 방송(음성 전달)은 가능성만 물어봄 → 나중에 한다면 사장님 폰 전용 별도 앱(직원 앱에 마이크 권한 넣지 않음).
+- 직원 폰 설치는 직원 면담 결과에 따름. 사장님 폰엔 유지.
+- 공기밥 카운팅·반찬 냉장고 RTSP 카메라는 나중에 따로.
+
+### 앱과 배포 (현재 상태)
+| 앱 | 폴더 | 릴리스 파일 | 설치 위치 | 2026-11-28 최신 버전 |
+|---|---|---|---|---|
+| LED 간판 | `android/app` | led-sign.apk | 포스기 | 112 (포스기엔 이전 판일 수 있음, 급하지 않음) |
+| 서빙 표시(+주방 화면 서버 8080, 방송) | `android/servemark` | serve-mark.apk | 포스기 | 122 |
+| 주방 화면(태블릿 전체화면 WebView) | `android/kds` | kitchen.apk | 주방 태블릿 | 102 |
+| 주방 알림(직원 폰) | `android/staff` | staff-alert.apk | 사장님 폰 | 105 |
+- 실제로 어느 판까지 깔렸는지는 사장님께 확인. 세 앱(+staff) 모두 **앱 업데이트 버튼**이 있음(처음 한 번 "출처를 알 수 없는 앱 설치" 허용 필요).
+- 릴리스: https://github.com/taekchonee/chodang-payroll/releases/tag/led-sign-latest (`version.json`, `settings.json`, `kds.html` 도 같이 올라감)
+- 브랜치 `ccr-c38959e8-cjrwuv`. `android/**` 또는 `config/**` 를 push 하면 GitHub Actions 가 빌드·릴리스. 버전 번호는 자동(100 + 그 앱 폴더를 건드린 커밋 수). `gh` CLI 없음 → `curl https://api.github.com/repos/taekchonee/chodang-payroll/actions/runs?per_page=1` 로 확인.
+- **설치 없이 바뀌는 것**: `config/settings.json`(시간 기준·메뉴 분류·방송 문구 phrases/batchNames) 과 `config/kds.html`(주방 화면). 포스기가 5분마다 받아 씀, 태블릿은 저절로 새로고침.
+
+### 로컬 빌드 요령 (이 PC)
+- JDK `%USERPROFILE%\AndroidBuild\jdk\jdk-17.0.21.1+2`, Gradle `AndroidBuild\gradle-8.7\bin\gradle`, SDK `AndroidBuild\sdk`(android-34 만 있음).
+- 저장소를 그대로 빌드하지 말고 scratchpad 에 `android/` 와 `config/` 를 복사한 뒤:
+  `build.gradle.kts` 의 AGP `8.7.3`→`8.5.2`, 각 앱 `compileSdk = 35`→`34`, `local.properties` 에 `sdk.dir=C:/Users/kieho/AndroidBuild/sdk`, 그다음 `gradle :servemark:assembleDebug -q` 등. (servemark 는 `../../config` 를 assets 로 씀)
+- **주의**: `node -e '...'` 안에서 Kotlin 문자 `'\n'` 을 넣으면 진짜 줄바꿈이 들어가 컴파일이 깨짐. 코틀린 수정은 Edit 도구나 파일로 쓴 패치 스크립트로.
+- 셸에서 `rm -rf $변수` 는 안전 검사에 막힘(리터럴 경로나 `"${B:?}"` 형태로).
+- 가상 휴대폰: `ANDROID_AVD_HOME=%USERPROFILE%\AndroidBuild\avd`, AVD `baljuphone`, adb `emulator-5554`. 가짜 이지포스 시험앱을 만들어 본 적 있음(필요할 때만).
+
+### 포스기·매장 환경
+- 포스기 192.168.0.39 (KICC 이지포스, 안드로이드 8.1, 패키지 `com.kicc.easypos.tablet`), 이 PC에서 RustDesk 로 조작.
+  - 스크롤은 마우스 휠 X, 끌기로. PC 키보드 입력 X → 포스기 화면 키보드를 눌러 입력. 클립보드 넘김은 가끔 안 됨.
+  - 이지포스 전체화면이라 아래 탐색 버튼이 숨음 → 화면 아래에서 위로 끌어 올리면 나타남.
+  - 접근성 앱(서빙 표시) 설치는 Play 프로텍트가 막음 → 사장님이 검사를 끄고 설치.
+- 홈어시스턴트 192.168.0.45 (80번 포트). 주방 방송 웹훅 `chodang_kds_announce` → `tts.speak`(Edge TTS) → `media_player.maejang_maejangjubang_hommini`, 볼륨 100%. 자동화 추가는 "HA와 SmartThings 통합 범위" 세션(local_9447e316-…)에 부탁했음 — 추가됐는지 사장님께 확인. 파일: `homeassistant/kitchen-announce.yaml`.
+- 이 PC 에 CCTV(Agent DVR)가 돎. 무거운 작업·재부팅 조심.
+
+---
+
+
+## (이전 기록) 목표
 입구 LED 간판(CoolLEDX-ADC3, 16×96, **세로 설치**)의 문구를, 간판 옆 포스기(KICC 이지포스, **안드로이드 8.1**)에 설치한 앱이 영업 시간표대로 자동으로 바꾼다. 원래는 CoolLED1248 앱으로 사람이 직접 바꾸고 있었다.
 
 ## 현재 상태
