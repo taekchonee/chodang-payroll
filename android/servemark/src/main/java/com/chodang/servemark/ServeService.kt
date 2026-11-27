@@ -17,9 +17,11 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.TextView
 
 /**
- * 이지포스 화면을 읽습니다. 누르는 것은 길게 누른 직후 열린 주문 화면의 X 하나뿐입니다.
+ * 이지포스 화면을 읽습니다. 누르는 것은 서빙완료 표시 직후 열린 주문 화면의 X 하나뿐입니다.
+ * 주문 화면의 할인·서비스 버튼 자리에 서빙완료 버튼을 덮어 띄웁니다(그 두 버튼은 가려짐).
  * - 테이블을 길게 누르면 그 테이블에 '서빙완료' 표시
  * - 테이블에 금액이 사라지면(결제 완료, 하늘색으로 돌아옴) 표시 삭제
  * 표시는 터치를 통과시키는 투명 창(TYPE_ACCESSIBILITY_OVERLAY)에 그립니다.
@@ -66,6 +68,7 @@ class ServeService : AccessibilityService() {
         handler.removeCallbacksAndMessages(null)
         overlay?.let { runCatching { wm.removeView(it) } }
         overlay = null
+        hideSaleButton()
         instance = null
         super.onDestroy()
     }
@@ -188,9 +191,11 @@ class ServeService : AccessibilityService() {
         targetVisible = pkg != null && pkg == marks.targetPackage
         if (root == null || !targetVisible) {
             visibleTables = emptyList()
+            hideSaleButton()
             overlay?.invalidate()
             return
         }
+        updateSaleButton(root)
         val found = mutableListOf<Table>()
         findTables(root, found, 0)
         // 같은 테이블이 겹쳐 잡히면 가장 작은 칸만 남깁니다.
@@ -209,6 +214,68 @@ class ServeService : AccessibilityService() {
             }
         }
         overlay?.invalidate()
+    }
+
+    // ------------------------------------------------------------------
+    // 주문 화면(매출등록)의 '할인'·'서비스' 자리에 덮어 띄우는 서빙완료 버튼
+    // ------------------------------------------------------------------
+
+    private var saleButton: TextView? = null
+    private var saleTable: String? = null
+    private val saleTableText = Regex("(테이블|포장)\\s*/\\s*(\\d+)")
+
+    private fun updateSaleButton(root: AccessibilityNodeInfo) {
+        if (!lastWindowClass.endsWith("EasySale")) return hideSaleButton()
+        fun exact(t: String) = root.findAccessibilityNodeInfosByText(t)
+            .firstOrNull { it.text?.toString()?.trim() == t && it.isVisibleToUser }
+        val discount = exact("할인")
+        val service = exact("서비스")
+        val tableNode = root.findAccessibilityNodeInfosByText("/")
+            .firstOrNull { saleTableText.containsMatchIn(it.text?.toString() ?: "") }
+        val m = tableNode?.text?.toString()?.let { saleTableText.find(it) }
+        if (discount == null || service == null || m == null) return hideSaleButton()
+        val table = if (m.groupValues[1] == "포장") "포장" + m.groupValues[2] else m.groupValues[2]
+        val r = Rect().also { discount.getBoundsInScreen(it) }
+        r.union(Rect().also { service.getBoundsInScreen(it) })
+        showSaleButton(table, r)
+    }
+
+    private fun showSaleButton(table: String, r: Rect) {
+        saleTable = table
+        val marked = marks.has(table)
+        val b = saleButton ?: TextView(this).apply {
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            textSize = 17f
+            setOnClickListener { onSaleButton() }
+        }.also { saleButton = it }
+        b.text = if (marked) "서빙완료 해제" else "서빙완료"
+        b.setBackgroundColor(Color.parseColor(if (marked) "#6B7280" else "#15803D"))
+        val lp = WindowManager.LayoutParams(
+            r.width(), r.height(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = r.left; y = r.top }
+        if (b.parent == null) wm.addView(b, lp) else wm.updateViewLayout(b, lp)
+    }
+
+    private fun hideSaleButton() {
+        saleButton?.takeIf { it.parent != null }?.let { runCatching { wm.removeView(it) } }
+        saleTable = null
+    }
+
+    private fun onSaleButton() {
+        val table = saleTable ?: return
+        val on = marks.toggle(table)
+        Diag.add("주문 화면 버튼: $table 서빙완료 ${if (on) "표시" else "해제"}")
+        hideSaleButton()
+        // 표시 후 주문 화면을 닫습니다(그 화면의 X 하나만).
+        closeDeadline = System.currentTimeMillis() + 4000
+        handler.post(closeOrderScreen)
     }
 
     private fun findTables(n: AccessibilityNodeInfo, out: MutableList<Table>, depth: Int) {
