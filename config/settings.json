@@ -5,7 +5,35 @@
   "announceMergeSec": 1.5,
   "amberMin": 5,
   "redMin": 10,
-  "extra": ["소주", "맥주", "막걸리", "모주", "음료", "공기밥", "할인"],
-  "low": ["초당순두부"],
-  "batch": ["제육불고기"]
+  "extra": [
+    "소주",
+    "맥주",
+    "막걸리",
+    "모주",
+    "음료",
+    "공기밥",
+    "할인"
+  ],
+  "low": [
+    "초당순두부"
+  ],
+  "batch": [
+    "제육불고기"
+  ],
+  "sayPresets": [
+    "포장 손님 오셨어요",
+    "재료 확인해 주세요",
+    "잠시 주방으로 와 주세요"
+  ],
+  "phrases": {
+    "new": "신규주문",
+    "change": "메뉴변경 발생",
+    "void": "주문취소",
+    "move": ""
+  },
+  "batchFormat": "{name} {n}개 추가",
+  "batchNames": {
+    "제육불고기": "제육"
+  },
+  "_방송문구": "phrases: new=신규주문, change=메뉴변경, void=전체취소, move=테이블이동(빈 칸이면 말 안 함). batchFormat/batchNames: 묶음 조리 안내"
 }

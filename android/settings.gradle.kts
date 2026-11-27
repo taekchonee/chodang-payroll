@@ -16,3 +16,4 @@ rootProject.name = "led-sign-bridge"
 include(":app")
 include(":servemark")
 include(":kds")
+include(":staff")

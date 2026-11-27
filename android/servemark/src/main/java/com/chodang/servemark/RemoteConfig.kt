@@ -25,6 +25,14 @@ object RemoteConfig {
     @Volatile var extra = listOf("소주", "맥주", "막걸리", "모주", "음료", "공기밥", "할인"); private set
     @Volatile var low = listOf("초당순두부"); private set
     @Volatile var batch = listOf("제육불고기"); private set
+    @Volatile var sayPresets = listOf("포장 손님 오셨어요", "재료 확인해 주세요", "잠시 주방으로 와 주세요"); private set
+    /** 방송 문구 (빈 문구면 방송 안 함) */
+    @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "void" to "주문취소", "move" to "")
+    /** 묶음 조리 안내: "{name} {n}개 추가", name 은 줄임말 */
+    @Volatile private var batchFormat = "{name} {n}개 추가"
+    @Volatile private var batchNames = mapOf("제육불고기" to "제육")
+    fun phrase(key: String) = phrases[key].orEmpty()
+    fun batchPhrase(item: String, n: Int) = batchFormat.replace("{name}", batchNames[item] ?: item).replace("{n}", n.toString())
     @Volatile var status = "앱 기본값"; private set
 
     @Volatile private var html: ByteArray? = null
@@ -79,6 +87,11 @@ object RemoteConfig {
         amberSec = (j.optDouble("amberMin", amberSec / 60.0) * 60).toInt()
         redSec = (j.optDouble("redMin", redSec / 60.0) * 60).toInt()
         extra = list("extra", extra); low = list("low", low); batch = list("batch", batch)
+        sayPresets = list("sayPresets", sayPresets)
+        fun map(k: String, d: Map<String, String>) = j.optJSONObject(k)?.let { o -> o.keys().asSequence().associateWith { o.getString(it) } } ?: d
+        phrases = map("phrases", phrases)
+        batchNames = map("batchNames", batchNames)
+        batchFormat = j.optString("batchFormat", batchFormat)
     }
 
     private fun stamp(t: Long) = SimpleDateFormat("MM-dd HH:mm", Locale.KOREA).format(Date(t))

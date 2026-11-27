@@ -69,9 +69,8 @@ class ServeService : AccessibilityService() {
         RemoteConfig.init(this)
         kitchen = Kitchen(this)
         announcer = Announcer(this)
-        kitchen.announce = { t, p -> announcer.table(t, p) }
-        kitchen.announceSay = { announcer.say(it) }
-        kds = KdsServer(this, kitchen) { overlay?.invalidate() }.also { it.start() }
+        kitchen.announce = { announcer.event(it) }
+        kds = KdsServer(this, kitchen, announcer) { overlay?.invalidate() }.also { it.start() }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK

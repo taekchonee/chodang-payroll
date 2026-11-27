@@ -63,8 +63,19 @@ class Kitchen(context: Context) {
     @Volatile private var snapshot: String = "{\"tickets\":[]}"
 
     /** 주방 방송 연결 (테이블, 문장 조각) / (전체 문장) */
-    var announce: ((String, String) -> Unit)? = null
-    var announceSay: ((String) -> Unit)? = null
+    /** 주방 방송 연결: 짧은 이벤트 문구 하나씩 (예: "신규주문", "제육 2개 추가") */
+    var announce: ((String) -> Unit)? = null
+    private fun ev(key: String) { RemoteConfig.phrase(key).takeIf { it.isNotBlank() }?.let { announce?.invoke(it) } }
+
+    /** 묶음 조리 메뉴가 다른 테이블에서 이미 조리 대기 중이면 "제육 n개 추가" */
+    private fun batchCheck(table: String, added: Map<String, Int>) {
+        added.forEach { (name, q) ->
+            val b = BATCH.firstOrNull { name.contains(it) } ?: return@forEach
+            val waiting = tickets.filter { it.table != table && it.voided == 0L && it.served == 0L && it.cooked == 0L }
+                .sumOf { t -> t.items.filterKeys { it.contains(b) }.values.sum() }
+            if (waiting > 0 && q > 0) announce?.invoke(RemoteConfig.batchPhrase(b, q))
+        }
+    }
     private fun spoken(m: Map<String, Int>) = m.filterKeys { forKitchen(it) }.entries.joinToString(", ") { "${it.key} ${it.value}개" }
 
     init { load() }
@@ -90,7 +101,8 @@ class Kitchen(context: Context) {
         start[table] = now
         if (needsCooking(items)) {
             tickets += Ticket(nextId++, table, LinkedHashMap(items), "new", now)
-            announce?.invoke(table, spoken(items))
+            ev("new")
+            batchCheck(table, items)
         }
         save()
     }
@@ -111,8 +123,10 @@ class Kitchen(context: Context) {
         lastItems[table] = items
         if (added.isEmpty() && removed.isEmpty()) return false
 
-        if (needsCooking(added)) announce?.invoke(table, spoken(added) + " 추가")
-        if (needsCooking(removed)) announce?.invoke(table, spoken(removed) + " 취소")
+        if (needsCooking(added) || needsCooking(removed)) {
+            ev("change")
+            if (needsCooking(added)) batchCheck(table, added)
+        }
         val live = tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }
         // 빠진 메뉴: 조리 전 티켓 먼저, 없으면 조리완료 티켓에서 빼고 취소선으로 남깁니다.
         removed.forEach { (k, q) ->
@@ -159,7 +173,7 @@ class Kitchen(context: Context) {
 
     /** 주문 전체 취소: 카드에 '주문 취소'를 잠깐 띄운 뒤 expire() 가 지움 */
     @Synchronized fun voidTable(table: String, now: Long) {
-        if (tickets.any { it.table == table && it.voided == 0L }) announce?.invoke(table, "주문 취소")
+        if (tickets.any { it.table == table && it.voided == 0L }) ev("void")
         tickets.filter { it.table == table && it.voided == 0L }.forEach { it.voided = now }
         lastItems.remove(table); start.remove(table)
         save()
@@ -193,7 +207,7 @@ class Kitchen(context: Context) {
 
     /** 테이블 이동: 주문표를 새 테이블로 옮깁니다. */
     @Synchronized fun move(from: String, to: String) {
-        if (tickets.any { it.table == from }) announceSay?.invoke("${from}번 테이블이 ${to}번으로 이동했습니다")
+        if (tickets.any { it.table == from }) ev("move")
         tickets.filter { it.table == from }.forEach { it.table = to; it.movedFrom = from }
         lastItems.remove(from)?.let { lastItems[to] = it }
         start.remove(from)?.let { start[to] = it }

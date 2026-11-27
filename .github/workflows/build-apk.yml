@@ -36,8 +36,9 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk led-sign.apk
           cp android/servemark/build/outputs/apk/release/servemark-release.apk serve-mark.apk
           cp android/kds/build/outputs/apk/release/kds-release.apk kitchen.apk
+          cp android/staff/build/outputs/apk/release/staff-release.apk staff-alert.apk
           c() { echo $((100 + $(git rev-list --count HEAD -- "android/$1"))); }
-          echo "{\"led-sign\": $(c app), \"serve-mark\": $(c servemark), \"kitchen\": $(c kds)}" > version.json
+          echo "{\"led-sign\": $(c app), \"serve-mark\": $(c servemark), \"kitchen\": $(c kds), \"staff-alert\": $(c staff)}" > version.json
           cat version.json
           cp config/settings.json settings.json
           cp config/kds.html kds.html
@@ -49,6 +50,7 @@ jobs:
             led-sign.apk
             serve-mark.apk
             kitchen.apk
+            staff-alert.apk
 
       - name: 다운로드용 릴리스에 올리기
         env:
@@ -60,4 +62,4 @@ jobs:
               --title "LED 간판 앱 (최신)" \
               --notes "포스기에서 led-sign.apk 를 내려받아 설치하세요."
           fi
-          gh release upload "$TAG" led-sign.apk serve-mark.apk kitchen.apk version.json settings.json kds.html --clobber
+          gh release upload "$TAG" led-sign.apk serve-mark.apk kitchen.apk staff-alert.apk version.json settings.json kds.html --clobber
