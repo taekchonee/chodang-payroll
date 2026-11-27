@@ -33,6 +33,7 @@ class ServeService : AccessibilityService() {
             private set
         private val TABLE_LABEL = Regex("^(\\d{1,3}|포장\\s*\\d{0,3})$")
         private val AMOUNT = Regex("[\\d,]{3,}\\s*원")
+        private val ITEM = Regex("^(.*\\D)\\s+(\\d{1,3})$")
     }
 
     /** 화면에서 찾은 테이블 하나 */
@@ -40,6 +41,9 @@ class ServeService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var marks: Marks
+    lateinit var kitchen: Kitchen
+        private set
+    private var kds: KdsServer? = null
     private lateinit var wm: WindowManager
     private var overlay: OverlayView? = null
     private var visibleTables: List<Table> = emptyList()
@@ -52,6 +56,8 @@ class ServeService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         marks = Marks(this)
+        kitchen = Kitchen(this)
+        kds = KdsServer(this, kitchen) { overlay?.invalidate() }.also { it.start() }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
@@ -66,6 +72,7 @@ class ServeService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        kds?.stop()
         overlay?.let { runCatching { wm.removeView(it) } }
         overlay = null
         hideSaleButton()
@@ -145,6 +152,7 @@ class ServeService : AccessibilityService() {
             return
         }
         val on = marks.toggle(label)
+        if (on) kitchen.clearTable(label, forget = false)  // 서빙완료 → 주방 주문표 삭제
         Diag.add("길게 누름: $label 서빙완료 ${if (on) "표시" else "해제"}")
         overlay?.invalidate()
         handler.post(scanRunnable)
@@ -229,17 +237,38 @@ class ServeService : AccessibilityService() {
     private fun amountOf(t: Table): Long =
         t.texts.mapNotNull { AMOUNT.find(it)?.value?.filter(Char::isDigit)?.toLongOrNull() }.maxOrNull() ?: 0L
 
+    /** 테이블 칸 글씨에서 메뉴와 수량을 읽습니다 (예: "짬뽕순두부 1"). */
+    private fun itemsOf(t: Table): Map<String, Int> {
+        val m = LinkedHashMap<String, Int>()
+        t.texts.forEach { line ->
+            if (TABLE_LABEL.matches(line) || AMOUNT.containsMatchIn(line)) return@forEach
+            ITEM.matchEntire(line)?.let { r ->
+                val name = r.groupValues[1].trim()
+                m[name] = (m[name] ?: 0) + r.groupValues[2].toInt()
+            }
+        }
+        return m
+    }
+
     private fun updateQueue() {
         val now = System.currentTimeMillis()
         visibleTables.forEach { t ->
             if (t.label.startsWith("포장")) return@forEach
-            if (!t.occupied) { marks.forgetOrder(t.label); return@forEach }
+            if (!t.occupied) {
+                marks.forgetOrder(t.label)
+                if (kitchen.knownTable(t.label)) kitchen.clearTable(t.label, forget = true)
+                return@forEach
+            }
             val amount = amountOf(t)
+            val items = itemsOf(t)
             val seen = marks.orderSince(t.label)
-            if (seen == 0L) {
-                marks.startOrder(t.label, now, amount)
-                Diag.add("${t.label} 새 주문 → 서빙 순서에 추가")
-            } else if (amount > marks.lastAmount(t.label)) {
+            if (seen == 0L || !kitchen.knownTable(t.label)) {
+                if (seen == 0L) {
+                    marks.startOrder(t.label, now, amount)
+                    Diag.add("${t.label} 새 주문 → 서빙 순서에 추가")
+                }
+                kitchen.newOrder(t.label, items, now)
+            } else if (kitchen.update(t.label, items, now) || amount > marks.lastAmount(t.label)) {
                 marks.setAmount(t.label, amount)
                 if (marks.has(t.label)) {
                     // 서빙 끝난 테이블의 추가 주문 → 표시를 풀고 맨 앞으로
@@ -314,6 +343,7 @@ class ServeService : AccessibilityService() {
     private fun onSaleButton() {
         val table = saleTable ?: return
         val on = marks.toggle(table)
+        if (on) kitchen.clearTable(table, forget = false)
         Diag.add("주문 화면 버튼: $table 서빙완료 ${if (on) "표시" else "해제"}")
         hideSaleButton()
         // 표시 후 주문 화면을 닫습니다(그 화면의 X 하나만).
@@ -415,6 +445,10 @@ class ServeService : AccessibilityService() {
             color = Color.WHITE; textSize = 14 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
         }
         private val boxFill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val cookedFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#0F6E56") }
+        private val cookedText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 12 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+        }
         private val boxText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE; textSize = 17 * d; typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
         }
@@ -439,6 +473,13 @@ class ServeService : AccessibilityService() {
                 badge.color = Color.parseColor(if (i == 0) "#C62828" else "#1E2430")
                 c.drawCircle(cx, cy, rad, badge)
                 c.drawText("${i + 1}", cx, cy + badgeText.textSize / 3, badgeText)
+                // 주방에서 조리완료 → 칸 오른쪽 위에 '조리완료' 딱지
+                if (kitchen.hasCookedOnly(label)) {
+                    val w = cookedText.measureText("조리완료") + 12 * d
+                    val tag = RectF(r.right - w - 4 * d, r.top + 4 * d, r.right - 4 * d, r.top + 26 * d)
+                    c.drawRoundRect(tag, 6 * d, 6 * d, cookedFill)
+                    c.drawText("조리완료", tag.centerX(), tag.centerY() + cookedText.textSize / 3, cookedText)
+                }
             }
             // 남은 서빙 수: 포장0 칸 아래 빈 곳
             val anchor = visibleTables.firstOrNull { it.label.startsWith("포장") }

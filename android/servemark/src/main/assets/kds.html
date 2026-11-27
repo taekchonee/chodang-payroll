@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>초당예반 주방</title>
+<style>
+:root{--bg:#0F1117;--card:#181B23;--line:#262A35;--text:#E8EAF0;--sub:#888780;--green:#5DCAA5;--amber:#EF9F27;--red:#E24B4A;--btn:#1D9E75}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;-webkit-user-select:none;user-select:none}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:sticky;top:0;background:var(--bg);z-index:2;flex-wrap:wrap}
+.logo{background:var(--btn);color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px}
+.title{font-size:18px;font-weight:700}
+.live{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--green)}
+.live i{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block}
+.live.bad{color:var(--red)}
+.pill{font-size:15px;padding:5px 12px;border-radius:8px}
+.clock{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;font-weight:700;margin-left:6px}
+.sound{background:var(--line);color:var(--text);border:none;border-radius:8px;height:34px;padding:0 12px;font-size:14px}
+.batch{display:flex;gap:8px;padding:0 16px 10px;flex-wrap:wrap}
+.batch div{background:#2A1F0A;border:1px solid #633806;color:#FAC775;border-radius:10px;padding:8px 14px;font-size:18px;font-weight:700}
+.batch span{font-size:13px;color:#BA7517;font-weight:400;margin-right:8px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;padding:0 16px}
+.tk{background:var(--card);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tk .bar{height:5px}
+.top{display:flex;align-items:flex-start;padding:12px 14px 6px}
+.tag{font-size:12px;padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:3px}
+.tno{font-size:36px;font-weight:700;line-height:1.05}
+.tno small{font-size:16px;color:var(--sub);font-weight:400;margin-left:2px}
+.time{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;font-weight:700;text-align:right}
+.time small{display:block;font-size:11px;color:var(--sub);font-weight:400;font-family:inherit}
+.prog{height:3px;background:var(--line);margin:0 14px 8px;border-radius:2px}
+.prog i{display:block;height:3px;border-radius:2px}
+.it{display:flex;align-items:center;font-size:19px;padding:5px 14px}
+.qty{min-width:30px;height:30px;border-radius:8px;background:var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;margin-right:10px}
+.it.batchy .qty{background:#633806;color:#FAC775}
+.low{font-size:13px;color:#5F5E5A;padding:2px 14px 0}
+.done{margin:auto 12px 12px;height:54px;border-radius:12px;border:none;background:var(--btn);color:#fff;font-size:18px;font-weight:700;cursor:pointer}
+.done:active{background:#0F6E56}
+.sep{display:flex;align-items:center;gap:8px;margin:18px 16px 10px;font-size:14px;color:var(--sub)}
+.sep::after{content:"";flex:1;height:1px;background:var(--line)}
+#serve{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;padding:0 16px 24px}
+.chip{background:var(--card);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:14px}
+.chip b{font-size:22px;color:#9FE1CB}
+.chip .d{color:#B4B2A9;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.undo{background:var(--line);border:none;color:#B4B2A9;border-radius:8px;height:34px;padding:0 12px;font-size:13px}
+.empty{grid-column:1/-1;text-align:center;color:var(--sub);font-size:20px;padding:60px 0}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">KDS</span><span class="title">초당예반 주방</span>
+  <span id="live" class="live"><i></i><span id="liveText">연결 중</span></span>
+  <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <button id="sound" class="sound">소리 켜기</button>
+    <span class="pill" style="background:#3A1B1B;color:#F09595">조리 대기 <b id="cq">0</b></span>
+    <span class="pill" style="background:#123A2E;color:#9FE1CB">서빙 대기 <b id="cs">0</b></span>
+  </span>
+  <span id="clk" class="clock">--:--</span>
+</header>
+<div id="batch" class="batch"></div>
+<div id="grid"></div>
+<div class="sep">조리완료 · 서빙 대기</div>
+<div id="serve"></div>
+<script>
+let state={tickets:[],low:[],batch:[]},offset=0,lastOk=0,seen=null,audio=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const isLow=n=>state.low.some(k=>n.includes(k));
+const isBatch=n=>state.batch.some(k=>n.includes(k));
+function col(s,add){if(add)return'#EF9F27';return s>=900?'#E24B4A':s>=480?'#EF9F27':'#5DCAA5'}
+function fmt(s){s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+function now(){return Date.now()+offset}
+function beep(){if(!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=880;o.connect(g);g.connect(audio.destination);g.gain.setValueAtTime(.25,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.6);o.start();o.stop(audio.currentTime+.6)}
+$('sound').onclick=()=>{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume();$('sound').textContent='소리 켜짐';beep()};
+async function load(){
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'});const j=await r.json();
+    offset=j.now-Date.now();state=j;lastOk=Date.now();
+    const ids=new Set(j.tickets.filter(t=>!t.cooked).map(t=>t.id));
+    if(seen&&[...ids].some(id=>!seen.has(id)))beep();
+    const sig=JSON.stringify(j.tickets);if(sig!==window._sig){window._sig=sig;render()}
+    seen=ids;
+  }catch(e){}
+}
+function render(){
+  const open=state.tickets.filter(t=>!t.cooked).sort((a,b)=>(b.add-a.add)||(a.created-b.created));
+  const done=state.tickets.filter(t=>t.cooked).sort((a,b)=>b.cooked-a.cooked);
+  $('cq').textContent=open.length;$('cs').textContent=done.length;
+  const sum={};open.forEach(t=>t.items.forEach(([n,q])=>{if(isBatch(n))sum[n]=(sum[n]||0)+q}));
+  $('batch').innerHTML=Object.entries(sum).map(([n,q])=>'<div><span>묶음 조리</span>'+esc(n)+' '+q+'</div>').join('');
+  let rank=0;
+  $('grid').innerHTML=open.length?open.map(t=>{
+    const s=(now()-t.created)/1000,c=col(s,t.add);
+    let tag;
+    if(t.add)tag='<span class="tag" style="background:#412402;color:#FAC775">추가 주문</span>';
+    else{tag='<span class="tag" style="background:'+(rank==0?'#501313':'#262A35')+';color:'+(rank==0?'#F7C1C1':'#B4B2A9')+'">'+(rank==0?'1 · 다음':(rank+1))+'</span>';rank++}
+    const main=t.items.filter(([n])=>!isLow(n)),low=t.items.filter(([n])=>isLow(n));
+    return '<div class="tk" data-c="'+t.created+'" data-a="'+(t.add?1:0)+'"><div class="bar" style="background:'+c+'"></div>'+
+      '<div class="top"><div>'+tag+'<div class="tno">'+esc(t.table)+'<small>번</small></div></div>'+
+      '<div class="time" style="margin-left:auto;color:'+c+'"><span>'+fmt(s)+'</span><small>경과</small></div></div>'+
+      '<div class="prog"><i style="background:'+c+';width:'+Math.min(100,s/1200*100)+'%"></i></div>'+
+      main.map(([n,q])=>'<div class="it'+(isBatch(n)?' batchy':'')+'"><span class="qty">'+q+'</span>'+(t.add?'<span style="color:#FAC775;margin-right:4px">+</span>':'')+esc(n)+'</div>').join('')+
+      (low.length?'<div class="low">'+low.map(([n,q])=>esc(n)+' '+q).join(' · ')+'</div>':'')+
+      '<div style="height:10px"></div><button class="done" data-id="'+t.id+'">조리완료</button></div>'
+  }).join(''):'<div class="empty">조리할 주문이 없습니다</div>';
+  $('serve').innerHTML=done.map(t=>'<div class="chip"><b>'+esc(t.table)+'번</b><span class="d">'+t.items.map(([n,q])=>esc(n)+' '+q).join(' · ')+'</span><span style="color:var(--sub);font-size:12px">'+Math.floor((now()-t.cooked)/60000)+'분 전</span><button class="undo" data-undo="'+t.id+'">되돌리기</button></div>').join('');
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.done'),u=e.target.closest('.undo');
+  if(b){b.disabled=true;b.textContent='…';await fetch('/api/cook?id='+b.dataset.id,{method:'POST'}).catch(()=>{});setTimeout(load,300)}
+  if(u){await fetch('/api/undo?id='+u.dataset.undo,{method:'POST'}).catch(()=>{});setTimeout(load,300)}
+});
+setInterval(()=>{
+  const d=new Date(now());$('clk').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const ago=Math.floor((Date.now()-lastOk)/1000),bad=!lastOk||ago>6;
+  $('live').className='live'+(bad?' bad':'');$('liveText').textContent=bad?(lastOk?'연결 끊김 · '+ago+'초 전':'연결 중'):'실시간';
+  tick();
+},1000);
+function tick(){document.querySelectorAll(".tk[data-c]").forEach(el=>{const s=(now()-(+el.dataset.c))/1000,c=col(s,el.dataset.a=="1");el.querySelector(".bar").style.background=c;const tm=el.querySelector(".time");tm.style.color=c;tm.querySelector("span").textContent=fmt(s);const p=el.querySelector(".prog i");p.style.background=c;p.style.width=Math.min(100,s/1200*100)+"%"})}
+setInterval(load,1500);load();
+</script>
+</body>
+</html>
