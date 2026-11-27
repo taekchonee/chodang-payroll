@@ -11,8 +11,8 @@ android {
         applicationId = "com.chodang.servemark"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.7.0"
+        versionCode = 13
+        versionName = "0.7.1"
     }
 
     // LED 간판 앱과 같은 공개 디버그 키로 서명 (업데이트 설치가 되도록)

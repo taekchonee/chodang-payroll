@@ -97,12 +97,12 @@ class ServeService : AccessibilityService() {
             marks.targetPackage = pkg
             Diag.add("이지포스 패키지 찾음: $pkg")
         }
-        // 화면이 자주 바뀌는 신호는 기록을 줄입니다.
+        // 다른 앱(카톡 등)의 글자는 기록하지 않습니다. 이지포스 신호만, 자주 바뀌는 신호는 빼고.
+        if (pkg != marks.targetPackage) { overlay?.invalidate(); return }
         if (e.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             Diag.add(describe(e))
             overlay?.invalidate()
         }
-        if (pkg != marks.targetPackage) return
 
         if (e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) onLongPress(e)
         if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
