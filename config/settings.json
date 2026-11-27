@@ -28,7 +28,7 @@
   "phrases": {
     "new": "신규주문",
     "change": "메뉴변경 발생",
-    "void": "주문취소",
+    "void": "",
     "move": ""
   },
   "batchFormat": "{name} {n}개 추가",

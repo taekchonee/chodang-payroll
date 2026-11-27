@@ -27,7 +27,7 @@ object RemoteConfig {
     @Volatile var batch = listOf("제육불고기"); private set
     @Volatile var sayPresets = listOf("포장 손님 오셨어요", "재료 확인해 주세요", "잠시 주방으로 와 주세요"); private set
     /** 방송 문구 (빈 문구면 방송 안 함) */
-    @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "void" to "주문취소", "move" to "")
+    @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "void" to "", "move" to "")
     /** 묶음 조리 안내: "{name} {n}개 추가", name 은 줄임말 */
     @Volatile private var batchFormat = "{name} {n}개 추가"
     @Volatile private var batchNames = mapOf("제육불고기" to "제육")

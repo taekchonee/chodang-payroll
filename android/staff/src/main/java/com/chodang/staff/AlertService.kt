@@ -22,7 +22,6 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.URL
-import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -31,7 +30,7 @@ import kotlin.concurrent.thread
 
 /**
  * 매장 와이파이에서 포스기(서빙 표시 앱)의 방송 문장을 기다렸다가 폰 자체 음성으로 읽습니다.
- * - 영업 시간이 아니거나 매장 밖이면 아무것도 하지 않고 기다림 (와이파이가 바뀔 때만 다시 확인)
+ * - 매장 와이파이가 아니면 아무것도 하지 않고 기다림 (와이파이가 바뀔 때만 다시 확인)
  * - 포스기에 '기다리는 요청'을 걸어 두는 방식이라 평소엔 폰이 거의 쉼
  */
 class AlertService : Service() {
@@ -119,32 +118,63 @@ class AlertService : Service() {
     }
 
     private var focus: AudioFocusRequest? = null
-    private var savedVolume = -1
+    private val navAttrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** 유튜브 등 다른 소리를 잠깐 줄이고 읽기 */
+    /**
+     * 길안내처럼: 다른 소리(유튜브 등)를 잠깐 줄이고 → 짧은 알림음(블루투스 이어폰이 깨어나며 첫 글자 씹힘 방지)
+     * → 안내 읽기 → 끝나면 다른 소리 원래대로. 볼륨은 폰 볼륨 그대로.
+     */
     fun speak(text: String) {
         val t = tts ?: return
         if (!ttsReady) return
         val am = getSystemService(AudioManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
-            focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()).build()
+            focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(navAttrs).build()
             am.requestAudioFocus(focus!!)
         }
-        if (prefs.boost && savedVolume < 0) {
-            savedVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 0)
+        val chimeMs = playChime()
+        main.postDelayed({
+            t.setSpeechRate(prefs.rate)
+            t.speak(text, TextToSpeech.QUEUE_ADD, null, "a" + System.nanoTime())
+        }, chimeMs + 120L)
+    }
+
+    /** "띵동" 짧은 알림음 (안내와 같은 소리 경로) — 재생 길이(ms) 반환 */
+    private fun playChime(): Long {
+        val rate = 44100
+        val tones = listOf(988.0 to 0.14, 1319.0 to 0.20)
+        val total = tones.sumOf { (it.second * rate).toInt() }
+        val pcm = ShortArray(total)
+        var k = 0
+        tones.forEach { (f, sec) ->
+            val n = (sec * rate).toInt()
+            for (i in 0 until n) {
+                val env = minOf(1.0, i / (rate * 0.01)) * minOf(1.0, (n - i) / (rate * 0.04))
+                pcm[k++] = (Math.sin(2 * Math.PI * f * i / rate) * env * 0.5 * Short.MAX_VALUE).toInt().toShort()
+            }
         }
-        t.setSpeechRate(prefs.rate)
-        t.speak(text, TextToSpeech.QUEUE_ADD, null, "a" + System.nanoTime())
+        return runCatching {
+            val track = android.media.AudioTrack.Builder()
+                .setAudioAttributes(navAttrs)
+                .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(rate)
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(pcm.size * 2).build()
+            track.write(pcm, 0, pcm.size)
+            track.play()
+            val ms = total * 1000L / rate
+            main.postDelayed({ runCatching { track.release() } }, ms + 500)
+            ms
+        }.getOrDefault(0L)
     }
 
     private fun afterSpeak() {
         val t = tts ?: return
         if (t.isSpeaking) return
         val am = getSystemService(AudioManager::class.java)
-        if (savedVolume >= 0) { am.setStreamVolume(AudioManager.STREAM_MUSIC, savedVolume, 0); savedVolume = -1 }
         if (Build.VERSION.SDK_INT >= 26) focus?.let { am.abandonAudioFocusRequest(it) }
     }
 
@@ -154,7 +184,6 @@ class AlertService : Service() {
         var since = -1L
         var fails = 0
         while (running) {
-            if (!prefs.inHours()) { set("영업 시간 아님 · 대기 중 (" + prefs.hoursText() + ")"); sleep(60_000); continue }
             val prefix = wifiPrefix()
             if (prefix == null) { set("매장 밖 · 대기 중 (배터리 사용 없음)"); sleep(10 * 60_000); continue }
             val host = prefs.host.takeIf { it.isNotEmpty() && it.startsWith("$prefix.") && alive(it) } ?: find(prefix)
@@ -226,17 +255,4 @@ class Prefs(ctx: Context) {
     var engine: String get() = p.getString("engine", "") ?: ""; set(v) = p.edit().putString("engine", v).apply()
     var voice: String get() = p.getString("voice", "") ?: ""; set(v) = p.edit().putString("voice", v).apply()
     var rate: Float get() = p.getFloat("rate", 1.1f); set(v) = p.edit().putFloat("rate", v).apply()
-    var boost: Boolean get() = p.getBoolean("boost", false); set(v) = p.edit().putBoolean("boost", v).apply()
-    /** 받는 시간 (분 단위). 시작 = 끝이면 하루 종일 */
-    var startMin: Int get() = p.getInt("start", 8 * 60 + 30); set(v) = p.edit().putInt("start", v).apply()
-    var endMin: Int get() = p.getInt("end", 15 * 60 + 30); set(v) = p.edit().putInt("end", v).apply()
-
-    fun inHours(): Boolean {
-        if (startMin == endMin) return true
-        val c = Calendar.getInstance()
-        val now = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
-        return if (startMin < endMin) now in startMin until endMin else now >= startMin || now < endMin
-    }
-    fun hoursText() = if (startMin == endMin) "하루 종일" else fmt(startMin) + "~" + fmt(endMin)
-    fun fmt(m: Int) = "%02d:%02d".format(m / 60, m % 60)
 }
