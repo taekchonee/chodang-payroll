@@ -10,13 +10,13 @@ import java.util.concurrent.Executors
 
 /**
  * 주방 방송: 홈어시스턴트 웹훅으로 문장을 보내면, HA 자동화가 매장주방홈미니에서 읽어 줍니다.
- * 같은 테이블의 변화가 3초 안에 여러 번 오면 한 문장으로 묶습니다.
+ * 같은 테이블의 변화가 1.5초 안에 여러 번 오면 한 문장으로 묶습니다.
  */
 class Announcer(context: Context) {
 
     companion object {
         const val DEFAULT_URL = "http://192.168.0.45/api/webhook/chodang_kds_announce"
-        private const val MERGE_MS = 3000L
+        private const val MERGE_MS = 1500L
     }
 
     private val prefs = context.applicationContext.getSharedPreferences("announce", Context.MODE_PRIVATE)
@@ -31,7 +31,7 @@ class Announcer(context: Context) {
         get() = prefs.getString("url", DEFAULT_URL) ?: DEFAULT_URL
         set(v) { prefs.edit().putString("url", v).apply() }
 
-    /** 테이블별 한 조각(예: "짬뽕순두부 1개 추가")을 모아 3초 뒤 한 번에 방송 */
+    /** 테이블별 한 조각(예: "짬뽕순두부 1개 추가")을 모아 1.5초 뒤 한 번에 방송 */
     fun table(table: String, part: String) = main.post {
         val list = pending.getOrPut(table) { mutableListOf() }
         if (list.isEmpty()) main.postDelayed({ flush(table) }, MERGE_MS)
