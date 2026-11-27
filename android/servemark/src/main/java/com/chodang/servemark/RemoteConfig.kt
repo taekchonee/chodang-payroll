@@ -27,10 +27,12 @@ object RemoteConfig {
     @Volatile var batch = listOf("제육불고기"); private set
     /** 국·공기밥 남은 양 설정 */
     @Volatile var soups: List<Soup.Pot> = listOf(
-        Soup.Pot("hwangtae", "황태해장국", listOf("황태해장국"), 23, 5, "인분", "황태해장국 끓이세요", "새로 엶"),
-        Soup.Pot("miyeok", "미역국", listOf("한우미역국", "전복미역국"), 23, 5, "인분", "미역국 끓이세요", "새로 엶"),
-        Soup.Pot("rice", "공기밥", emptyList(), 0, 0, "공기", "밥 지으세요", "새로 지음"),
+        Soup.Pot("hwangtae", "황태해장국", listOf("황태해장국"), 23, 50, "인분", "황태해장국 끓이세요", "조리완료"),
+        Soup.Pot("miyeok", "미역국", listOf("한우미역국", "전복미역국"), 23, 50, "인분", "미역국 끓이세요", "조리완료"),
     ); private set
+    /** 공기밥 (시간대 자료는 settings.json 의 rice.weekday / rice.weekend) */
+    @Volatile var rice = Soup.Rice(listOf("초당순두부", "짬뽕순두부", "한우미역국", "전복미역국", "황태해장국", "공기밥"),
+        17, 40, 3, "14:30", "밥 지으세요", 15, emptyMap(), emptyMap()); private set
     /** 방송 문구 (빈 문구면 방송 안 함) */
     @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "void" to "", "move" to "")
     /** 묶음 조리 안내: "{name} {n}개 추가", name 은 줄임말 */
@@ -98,9 +100,18 @@ object RemoteConfig {
                 val ms = o.optJSONArray("menus")
                 Soup.Pot(o.getString("key"), o.optString("name", o.getString("key")),
                     if (ms == null) emptyList() else (0 until ms.length()).map { ms.getString(it) },
-                    o.optInt("pot", 0), o.optInt("alert", 0), o.optString("unit", "인분"),
-                    o.optString("say", ""), o.optString("action", "새로 엶"))
-            }
+                    o.optInt("pot", 0), o.optInt("alertPct", 50), o.optString("unit", "인분"),
+                    o.optString("say", ""), o.optString("action", "조리완료"))
+            }.filter { it.key != Soup.RICE }
+        }
+        j.optJSONObject("rice")?.let { o ->
+            fun prof(k: String) = o.optJSONObject(k)?.let { p -> p.keys().asSequence().associate { hm ->
+                hm.split(":").let { it[0].toInt() * 60 + it[1].toInt() } to p.getDouble(hm) } } ?: emptyMap()
+            val ms = o.optJSONArray("menus")
+            rice = Soup.Rice(if (ms == null) rice.menus else (0 until ms.length()).map { ms.getString(it) },
+                o.optInt("perPot", rice.perPot), o.optInt("cookMin", rice.cookMin), o.optInt("margin", rice.margin),
+                o.optString("close", rice.close), o.optString("say", rice.say), o.optInt("slotMin", rice.slotMin),
+                prof("weekday"), prof("weekend"))
         }
         fun map(k: String, d: Map<String, String>) = j.optJSONObject(k)?.let { o -> o.keys().asSequence().associateWith { o.getString(it) } } ?: d
         phrases = map("phrases", phrases)

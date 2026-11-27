@@ -57,9 +57,11 @@ class ServeService : AccessibilityService() {
     private var visibleTables: List<Table> = emptyList()
     private var targetVisible = false
     private val scanRunnable = Runnable { scan() }
+    private var soupTicks = 0
     private val ticker = object : Runnable {
         override fun run() {
             if (::kitchen.isInitialized) kitchen.expire(System.currentTimeMillis())
+            if (::soup.isInitialized && ++soupTicks % 10 == 0) soup.tick(System.currentTimeMillis())
             RemoteConfig.refreshIfDue()
             scan(); handler.postDelayed(this, 3000)
         }

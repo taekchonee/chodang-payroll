@@ -20,7 +20,10 @@ import kotlin.concurrent.thread
  *  GET  /say           → 사장님 폰용 직접 방송 화면
  *  POST /api/say?text= → 직접 방송 (홈미니 + 직원 폰)
  *  GET  /api/soup      → 국·공기밥 남은 양
- *  POST /api/soup/open?key= → 새 냄비 엶 (+1회 양)
+ *  POST /api/soup/open?key= → 국 조리완료(+1배치) / key=rice 면 새로 지음(40분 뒤 +1솥)
+ *  POST /api/soup/undo?key= → 방금 누른 것 되돌리기 (15초 안)
+ *  POST /api/rice/start?pots= → 아침 시작 밥 솥 수
+ *  POST /api/soup/set?key=&i=&pct= → 직원이 바트/솥 남은 % 를 고침
  */
 class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val soup: Soup, private val onChange: () -> Unit) {
 
@@ -86,6 +89,21 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                 send(sock, 200, "application/json; charset=utf-8", soup.json().toByteArray())
             method == "POST" && path == "/api/soup/open" -> {
                 val ok = q("key")?.let { soup.open(it) } ?: false
+                send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())
+            }
+            method == "POST" && path == "/api/soup/undo" -> {
+                val ok = q("key")?.let { soup.undo(it) } ?: false
+                send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())
+            }
+            method == "POST" && path == "/api/soup/set" -> {
+                val ok = run {
+                    val k = q("key"); val i = q("i")?.toIntOrNull(); val p = q("pct")?.toIntOrNull()
+                    if (k == null || i == null || p == null) false else soup.set(k, i, p)
+                }
+                send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())
+            }
+            method == "POST" && path == "/api/rice/start" -> {
+                val ok = q("pots")?.toDoubleOrNull()?.let { soup.riceStart(it) } ?: false
                 send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())
             }
             method == "GET" && path == "/say" ->
