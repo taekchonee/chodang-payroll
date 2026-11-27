@@ -23,7 +23,7 @@ class Marks(context: Context) {
 
     /** 진단 표시(화면 왼쪽 위 신호 기록)를 켤지 */
     var diagOverlay: Boolean
-        get() = prefs.getBoolean("diag", true)
+        get() = prefs.getBoolean("diag", false)
         set(v) { prefs.edit().putBoolean("diag", v).apply() }
 
     /** 이지포스 패키지 이름 (비어 있으면 자동으로 찾음) */
