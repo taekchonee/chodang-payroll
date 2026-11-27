@@ -19,7 +19,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 /**
- * 이지포스 화면을 '읽기만' 합니다(누르거나 바꾸지 않음).
+ * 이지포스 화면을 읽습니다. 누르는 것은 길게 누른 직후 열린 주문 화면의 X 하나뿐입니다.
  * - 테이블을 길게 누르면 그 테이블에 '서빙완료' 표시
  * - 테이블에 금액이 사라지면(결제 완료, 하늘색으로 돌아옴) 표시 삭제
  * 표시는 터치를 통과시키는 투명 창(TYPE_ACCESSIBILITY_OVERLAY)에 그립니다.
@@ -92,6 +92,10 @@ class ServeService : AccessibilityService() {
         if (pkg != marks.targetPackage) return
 
         if (e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) onLongPress(e)
+        if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            lastWindowClass = e.className?.toString() ?: ""
+            if (System.currentTimeMillis() < closeDeadline) handler.post(closeOrderScreen)
+        }
 
         handler.removeCallbacks(scanRunnable)
         handler.postDelayed(scanRunnable, 250)
@@ -140,6 +144,32 @@ class ServeService : AccessibilityService() {
         val on = marks.toggle(label)
         Diag.add("길게 누름: $label 서빙완료 ${if (on) "표시" else "해제"}")
         overlay?.invalidate()
+        // 손을 떼면 이지포스가 일반 터치로도 받아 주문 화면(매출등록)을 엽니다 → 4초 안에 열리면 X 를 한 번 눌러 닫습니다.
+        closeDeadline = System.currentTimeMillis() + 4000
+    }
+
+    // ------------------------------------------------------------------
+    // 길게 누른 직후 열린 주문 화면 닫기 (이 앱이 이지포스를 누르는 유일한 곳)
+    // ------------------------------------------------------------------
+
+    @Volatile private var closeDeadline = 0L
+    @Volatile private var lastWindowClass = ""
+
+    private val closeOrderScreen = object : Runnable {
+        override fun run() {
+            if (System.currentTimeMillis() >= closeDeadline) return
+            // 주문 화면(EasySale)일 때만, 그 화면의 X(btnClose) 하나만 누릅니다.
+            if (!lastWindowClass.endsWith("EasySale")) return
+            val root = rootInActiveWindow ?: return run { handler.postDelayed(this, 200) }
+            if (root.packageName?.toString() != marks.targetPackage) return
+            val btn = root.findAccessibilityNodeInfosByViewId("${marks.targetPackage}:id/btnClose")
+                .firstOrNull { it.isVisibleToUser && (it.isClickable || it.parent?.isClickable == true) }
+            if (btn == null) { handler.postDelayed(this, 200); return }
+            closeDeadline = 0L  // 한 번만
+            val target = if (btn.isClickable) btn else btn.parent
+            val ok = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Diag.add("주문 화면 자동 닫기: ${if (ok) "성공" else "실패"}")
+        }
     }
 
     private fun tableLabelIn(n: AccessibilityNodeInfo): String? {
