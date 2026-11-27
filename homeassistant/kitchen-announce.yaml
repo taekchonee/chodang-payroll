@@ -1,0 +1,20 @@
+# 홈어시스턴트 자동화: 서빙 표시 앱(포스기)이 보내는 주방 방송을 매장주방홈미니에서 읽어 줍니다.
+# 설정 → 자동화 → 새 자동화 → (오른쪽 위 ⋮) YAML로 편집 → 아래 내용을 붙여넣고 저장
+alias: 주방 방송 (서빙 표시 앱)
+description: 포스기 서빙 표시 앱의 웹훅으로 받은 문장을 매장주방홈미니에서 읽어 줌
+triggers:
+  - trigger: webhook
+    webhook_id: chodang_kds_announce
+    allowed_methods:
+      - POST
+    local_only: true
+actions:
+  - action: tts.speak
+    target:
+      entity_id: tts.edge_tts_service_edge_tts
+    data:
+      media_player_entity_id: media_player.maejang_maejangjubang_hommini
+      message: "{{ trigger.json.message }}"
+      cache: false
+mode: queued
+max: 10

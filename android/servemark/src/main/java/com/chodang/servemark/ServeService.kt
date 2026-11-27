@@ -47,6 +47,8 @@ class ServeService : AccessibilityService() {
     private lateinit var marks: Marks
     lateinit var kitchen: Kitchen
         private set
+    lateinit var announcer: Announcer
+        private set
     private var kds: KdsServer? = null
     private lateinit var wm: WindowManager
     private var overlay: OverlayView? = null
@@ -64,6 +66,9 @@ class ServeService : AccessibilityService() {
         instance = this
         marks = Marks(this)
         kitchen = Kitchen(this)
+        announcer = Announcer(this)
+        kitchen.announce = { t, p -> announcer.table(t, p) }
+        kitchen.announceSay = { announcer.say(it) }
         kds = KdsServer(this, kitchen) { overlay?.invalidate() }.also { it.start() }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         serviceInfo = serviceInfo.apply {

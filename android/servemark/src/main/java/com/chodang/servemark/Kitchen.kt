@@ -62,6 +62,11 @@ class Kitchen(context: Context) {
     private var nextId = System.currentTimeMillis()
     @Volatile private var snapshot: String = "{\"tickets\":[]}"
 
+    /** 주방 방송 연결 (테이블, 문장 조각) / (전체 문장) */
+    var announce: ((String, String) -> Unit)? = null
+    var announceSay: ((String) -> Unit)? = null
+    private fun spoken(m: Map<String, Int>) = m.filterKeys { forKitchen(it) }.entries.joinToString(", ") { "${it.key} ${it.value}개" }
+
     init { load() }
 
     // ---------------- 읽기 ----------------
@@ -81,7 +86,10 @@ class Kitchen(context: Context) {
         tickets.removeAll { it.table == table && it.voided == 0L }
         lastItems[table] = items
         start[table] = now
-        if (needsCooking(items)) tickets += Ticket(nextId++, table, LinkedHashMap(items), "new", now)
+        if (needsCooking(items)) {
+            tickets += Ticket(nextId++, table, LinkedHashMap(items), "new", now)
+            announce?.invoke(table, spoken(items))
+        }
         save()
     }
 
@@ -101,6 +109,8 @@ class Kitchen(context: Context) {
         lastItems[table] = items
         if (added.isEmpty() && removed.isEmpty()) return false
 
+        if (needsCooking(added)) announce?.invoke(table, spoken(added) + " 추가")
+        if (needsCooking(removed)) announce?.invoke(table, spoken(removed) + " 취소")
         val live = tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }
         // 빠진 메뉴: 조리 전 티켓 먼저, 없으면 조리완료 티켓에서 빼고 취소선으로 남깁니다.
         removed.forEach { (k, q) ->
@@ -147,6 +157,7 @@ class Kitchen(context: Context) {
 
     /** 주문 전체 취소: 카드에 '주문 취소'를 잠깐 띄운 뒤 expire() 가 지움 */
     @Synchronized fun voidTable(table: String, now: Long) {
+        if (tickets.any { it.table == table && it.voided == 0L }) announce?.invoke(table, "주문 취소")
         tickets.filter { it.table == table && it.voided == 0L }.forEach { it.voided = now }
         lastItems.remove(table); start.remove(table)
         save()
@@ -180,6 +191,7 @@ class Kitchen(context: Context) {
 
     /** 테이블 이동: 주문표를 새 테이블로 옮깁니다. */
     @Synchronized fun move(from: String, to: String) {
+        if (tickets.any { it.table == from }) announceSay?.invoke("${from}번 테이블이 ${to}번으로 이동했습니다")
         tickets.filter { it.table == from }.forEach { it.table = to; it.movedFrom = from }
         lastItems.remove(from)?.let { lastItems[to] = it }
         start.remove(from)?.let { start[to] = it }

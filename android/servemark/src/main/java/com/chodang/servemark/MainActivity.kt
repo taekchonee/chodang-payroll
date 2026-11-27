@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var info: TextView
     private lateinit var log: TextView
     private lateinit var diagButton: TextView
+    private lateinit var announceButton: TextView
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() { refresh(); handler.postDelayed(this, 1500) }
@@ -57,6 +58,16 @@ class MainActivity : Activity() {
             ServeService.instance?.refresh()
         }
         row1.addView(diagButton)
+        row1.addView(button("주방 방송 시험") {
+            val s = ServeService.instance ?: return@button toast("먼저 접근성에서 '서빙 표시'를 켜 주세요")
+            s.announcer.say("주방 방송 시험입니다")
+            toast("매장주방홈미니에서 소리가 나는지 확인해 주세요")
+        })
+        announceButton = button("") {
+            val s = ServeService.instance ?: return@button
+            s.announcer.enabled = !s.announcer.enabled
+        }
+        row1.addView(announceButton)
         row1.addView(button("표시 모두 지우기") { marks.clear(); ServeService.instance?.refresh() })
         col.addView(row1)
 
@@ -78,6 +89,7 @@ class MainActivity : Activity() {
         status.text = if (on) "● 켜짐 — 이지포스에서 주문 있는 테이블을 길게 누르면 '서빙완료'가 표시됩니다"
             else "● 꺼짐 — '접근성 설정 열기'에서 '서빙 표시'를 켜 주세요"
         status.setTextColor(Color.parseColor(if (on) "#15803D" else "#C62828"))
+        announceButton.text = if (ServeService.instance?.announcer?.enabled != false) "주방 방송 끄기" else "주방 방송 켜기"
         diagButton.text = if (marks.diagOverlay) "진단 표시 끄기" else "진단 표시 켜기"
         info.text = buildString {
             append("주방 화면 주소: ").append(kdsAddress()).append('\n')
