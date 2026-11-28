@@ -123,10 +123,14 @@ class Kitchen(context: Context) {
         lastItems[table] = items
         if (added.isEmpty() && removed.isEmpty()) return false
 
-        if (needsCooking(added) || needsCooking(removed)) {
-            ev("change")
-            if (needsCooking(added)) batchCheck(table, added)
+        // 추가 주문 → "추가주문, 5번 테이블, 짬뽕순두부 1개" (조리할 메뉴만 읽음)
+        if (needsCooking(added)) {
+            val items = added.filterKeys { forKitchen(it) }.entries.joinToString(", ") { "${it.key} ${it.value}개" }
+            val f = RemoteConfig.phrase("add").ifBlank { "추가주문, {table}번 테이블, {items}" }
+            announce?.invoke(f.replace("{table}", table).replace("{items}", items))
         }
+        // 조리할 메뉴가 빠졌으면 → "메뉴변경 발생"
+        if (needsCooking(removed)) ev("change")
         val live = tickets.filter { it.table == table && it.voided == 0L && it.served == 0L }
         // 빠진 메뉴: 조리 전 티켓 먼저, 없으면 조리완료 티켓에서 빼고 취소선으로 남깁니다.
         removed.forEach { (k, q) ->

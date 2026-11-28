@@ -34,7 +34,7 @@ object RemoteConfig {
     @Volatile var rice = Soup.Rice(listOf("초당순두부", "짬뽕순두부", "한우미역국", "전복미역국", "황태해장국", "공기밥"),
         17, 40, 3, "14:30", "밥 지으세요", 15, emptyMap(), emptyMap()); private set
     /** 방송 문구 (빈 문구면 방송 안 함) */
-    @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "void" to "", "move" to "")
+    @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "add" to "추가주문, {table}번 테이블, {items}", "void" to "", "move" to "")
     /** 묶음 조리 안내: "{name} {n}개 추가", name 은 줄임말 */
     @Volatile private var batchFormat = "{name} {n}개 추가"
     @Volatile private var batchNames = mapOf("제육불고기" to "제육")

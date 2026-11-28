@@ -51,6 +51,7 @@
   "phrases": {
     "new": "신규주문",
     "change": "메뉴변경 발생",
+    "add": "추가주문, {table}번 테이블, {items}",
     "void": "",
     "move": ""
   },
@@ -58,7 +59,7 @@
   "batchNames": {
     "제육불고기": "제육"
   },
-  "_방송문구": "phrases: new=신규주문, change=메뉴변경, void=전체취소, move=테이블이동(빈 칸이면 말 안 함). batchFormat/batchNames: 묶음 조리 안내",
+  "_방송문구": "phrases: new=신규주문, change=메뉴 빠짐(메뉴변경), add=추가주문({table} 테이블 번호, {items} 추가 메뉴·수량), void=전체취소, move=테이블이동(빈 칸이면 말 안 함). batchFormat/batchNames: 묶음 조리 안내",
   "rice": {
     "menus": [
       "초당순두부",
