@@ -85,6 +85,9 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                 val ip = sock.inetAddress?.hostAddress ?: "?"
                 send(sock, 200, "application/json; charset=utf-8", announcer.poll(since, ip, 25_000).toString().toByteArray())
             }
+            method == "GET" && path == "/api/diag" ->
+                send(sock, 200, "text/plain; charset=utf-8", (Diag.recent(300).joinToString("\n") +
+                    "\n\n마지막 화면 읽기: " + Diag.lastScan).toByteArray())
             method == "GET" && path == "/api/soup" ->
                 send(sock, 200, "application/json; charset=utf-8", soup.json().toByteArray())
             method == "POST" && path == "/api/soup/open" -> {

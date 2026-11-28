@@ -126,6 +126,8 @@ class ServeService : AccessibilityService() {
             if (lastWindowClass.contains("AlertDialog") && e.text.joinToString(" ").contains("취소")) {
                 cancelPromptAt = System.currentTimeMillis()
             }
+            // 창 안 글씨까지 읽어서 취소/결제 신호를 찾습니다(창이 다 그려진 뒤).
+            handler.postDelayed(signalCheck, 300)
             if (System.currentTimeMillis() < closeDeadline) handler.post(closeOrderScreen)
         }
 
@@ -269,11 +271,38 @@ class ServeService : AccessibilityService() {
     private data class Gone(val items: Map<String, Int>, val at: Long)
     private val gone = mutableMapOf<String, Gone>()
     @Volatile private var cancelPromptAt = 0L
+    @Volatile private var payAt = 0L
+    private var lastSignalText = ""
+    private val CANCEL_TEXT = Regex("취소\\s*하시겠|취소\\s*되었|취소\\s*완료|주문을\\s*취소|전체\\s*취소\\s*하")
+    private val PAY_TEXT = Regex("결제\\s*완료|결제\\s*되었|승인\\s*완료|정상\\s*승인|거스름|받을\\s*금액|받은\\s*금액|영수증\\s*출력")
+
+    /** 이지포스 창(대화상자 포함)의 글씨를 읽어 취소/결제 신호를 기록 */
+    private val signalCheck = Runnable {
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        val texts = mutableListOf<String>()
+        // 창마다 따로 읽음(큰 테이블 화면 글씨 때문에 대화상자 글씨가 잘리지 않게), 위에 뜬 창(대화상자)부터
+        ws.reversed().forEach { w -> w.root?.takeIf { it.packageName?.toString() == marks.targetPackage }?.let {
+            val l = mutableListOf<String>(); collectTexts(it, l, 0); texts += l } }
+        if (texts.isEmpty()) rootInActiveWindow?.takeIf { it.packageName?.toString() == marks.targetPackage }?.let { collectTexts(it, texts, 0) }
+        val all = texts.joinToString(" ")
+        val now = System.currentTimeMillis()
+        val c = CANCEL_TEXT.find(all); val p = PAY_TEXT.find(all)
+        if (c != null) cancelPromptAt = now
+        if (p != null) payAt = now
+        if ((c != null || p != null) && all.take(80) != lastSignalText) {
+            lastSignalText = all.take(80)
+            Diag.add("${if (c != null) "취소" else "결제"} 신호: \"${(c ?: p)!!.value}\" ($lastWindowClass) ${all.take(60)}")
+        }
+    }
+
+    /** 취소인지: 최근 1분 안에 취소 신호가 있고, 그 뒤에 결제 신호가 없으면 취소 */
+    private fun isCancel(at: Long) = at - cancelPromptAt in 0..60_000 && !(payAt > cancelPromptAt && at - payAt in 0..60_000)
 
     /** 비워진 테이블 정리: 취소 창이 떴었으면 주방에 '주문 취소', 아니면 결제로 보고 조용히 정리 */
     private fun finishGone(table: String, g: Gone) {
         gone.remove(table)
-        val cancelled = g.at - cancelPromptAt in 0..60_000
+        val cancelled = isCancel(g.at)
+        Diag.add("$table 비워짐 → ${if (cancelled) "취소로 봄" else "결제로 봄"} (취소신호 ${ago(g.at, cancelPromptAt)}, 결제신호 ${ago(g.at, payAt)})")
         soup.release(table, cancelled)
         if (cancelled) {
             kitchen.voidTable(table, g.at)
@@ -285,6 +314,8 @@ class ServeService : AccessibilityService() {
         marks.remove(table)
         marks.forgetOrder(table)
     }
+
+    private fun ago(at: Long, t: Long) = if (t == 0L) "없음" else "${(at - t) / 1000}초 전"
 
     private fun updateQueue() {
         val now = System.currentTimeMillis()
@@ -299,7 +330,11 @@ class ServeService : AccessibilityService() {
         // 포장: 서빙 순서·주방 카드와 별개로 국 남은 양만 셉니다.
         visibleTables.filter { it.label.startsWith("포장") }.forEach { t ->
             if (t.occupied) soup.observe(t.label, itemsOf(t))
-            else if (soup.knows(t.label)) soup.release(t.label, cancelled = now - cancelPromptAt in 0..60_000)
+            else if (soup.knows(t.label)) {
+                val cancelled = isCancel(now)
+                Diag.add("${t.label} 비워짐 → ${if (cancelled) "취소로 봄" else "결제로 봄"} (취소신호 ${ago(now, cancelPromptAt)}, 결제신호 ${ago(now, payAt)})")
+                soup.release(t.label, cancelled)
+            }
         }
         visibleTables.forEach { t ->
             if (t.label.startsWith("포장") || !t.occupied) return@forEach

@@ -125,6 +125,7 @@ class Soup(context: Context) {
 
     @Synchronized fun release(table: String, cancelled: Boolean) {
         val m = last.remove(table) ?: return
+        if (m.isNotEmpty()) Diag.add("$table 국·밥 ${if (cancelled) "취소 → 되돌림" else "결제 → 그대로"}: ${m.entries.joinToString { "${it.key} ${it.value}" }}")
         if (cancelled) m.forEach { (k, n) -> if (n > 0) sold(k, -n, "$table 취소") }
         saveLast()
     }
