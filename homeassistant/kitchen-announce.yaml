@@ -13,6 +13,18 @@ triggers:
     local_only: true
 conditions: []
 actions:
+  # 홈미니가 1분 넘게 '재생 중'에 멈춰 있으면(외부 재생 허용 대기 등) 먼저 멈춤
+  - if:
+      - condition: template
+        value_template: >-
+          {{ is_state("media_player.maejang_hommini_tts","playing") and
+             (now() - states.media_player.maejang_hommini_tts.last_changed).total_seconds() > 60 }}
+    then:
+      - action: media_player.media_stop
+        target:
+          entity_id: media_player.maejang_hommini_tts
+        continue_on_error: true
+      - delay: 1
   - action: script.store_announce
     data:
       message: "{{ trigger.json.message }}"
