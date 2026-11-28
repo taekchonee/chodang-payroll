@@ -63,6 +63,38 @@ footer{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px 
 .chip .d{color:#B4B2A9;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .undo{background:var(--line);border:none;color:#B4B2A9;border-radius:7px;height:30px;padding:0 10px;font-size:12px}
 .empty{grid-column:1/-1;text-align:center;color:var(--sub);font-size:20px;padding:60px 0}
+/* ===== 큰 글씨 (2026-11-28): 카드는 한 화면에 2장 + 다음 카드 살짝, 좌우로 넘김. 카드 안 내용이 길면 위아래로 넘김 ===== */
+#grid{display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;gap:18px;padding:4px 18px 16px;align-items:stretch;-webkit-overflow-scrolling:touch}
+.tk{flex:0 0 calc((100vw - 54px) / 2.12);scroll-snap-align:start;overflow-y:auto;border-radius:20px}
+.tk .bar{height:10px}
+.top{padding:18px 22px 10px}
+.tag{font-size:22px;padding:4px 12px;border-radius:8px;margin-bottom:6px}
+.tno{font-size:96px;line-height:1}
+.tno small{font-size:30px}
+.time{font-size:56px}
+.time small{font-size:18px}
+.prog{height:8px;margin:0 22px 14px}
+.prog i{height:8px}
+.it{font-size:44px;padding:10px 22px;font-weight:600}
+.qty{min-width:68px;height:64px;font-size:42px;border-radius:12px;padding:0 10px}
+.it .nm{margin-right:16px}
+.cxl{font-size:22px;padding:3px 10px}
+.addsep{font-size:24px;margin:14px 22px 4px;gap:12px}
+.addsep::before,.addsep::after{height:2px}
+.at{font-size:30px;margin-left:8px}
+.ext{font-size:28px;padding:8px 22px 0}
+.done,.voidmsg{height:100px;font-size:38px;border-radius:16px;margin:auto 18px 18px}
+.batch div{font-size:38px;padding:12px 30px}
+.batch span{font-size:22px}
+.empty{flex:1;font-size:36px}
+.title{font-size:24px}
+.pill{font-size:20px}
+.clock{font-size:32px}
+footer{min-height:72px}
+.sep{font-size:18px}
+.chip{font-size:20px;padding:8px 8px 8px 14px;max-width:460px}
+.chip b{font-size:28px}
+.undo{height:44px;font-size:18px;padding:0 14px}
 </style>
 </head>
 <body>
