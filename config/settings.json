@@ -129,5 +129,38 @@
       "14:45": 0.38
     }
   },
-  "_밥설명": "rice: perPot=1솥 공기 수(3900g/230g), cookMin=밥 짓는 시간, margin=짓는 동안 남겨 둘 공기 수, weekday/weekend=15분 칸별 평균 공기 수(2026-10-28~2026-11-27 초당예반 포스주문이력). 제육불고기 등은 밥 안 씀."
+  "_밥설명": "rice: perPot=1솥 공기 수(3900g/230g), cookMin=밥 짓는 시간, margin=짓는 동안 남겨 둘 공기 수, weekday/weekend=15분 칸별 평균 공기 수(2026-10-28~2026-11-27 초당예반 포스주문이력). 제육불고기 등은 밥 안 씀.",
+  "busy": {
+    "enabled": true,
+    "dishLightMin": 9,
+    "dishRecentMin": 13,
+    "lightSec": 300,
+    "recentSec": 600,
+    "stableN": 2,
+    "clearSec": 300,
+    "cooldownSec": 1200,
+    "webhookUrl": "http://192.168.0.45/api/webhook/chodang_pos_busy",
+    "notDish": [
+      "공기밥",
+      "면추가",
+      "소주",
+      "맥주",
+      "음료",
+      "지평막걸리",
+      "막걸리",
+      "반찬판매",
+      "매실청",
+      "모주",
+      "젓갈",
+      "고추장",
+      "콜라",
+      "사이다"
+    ],
+    "setMinus": [
+      "세트할인",
+      "할인",
+      "세트"
+    ]
+  },
+  "_혼잡설명": "busy: 5분(lightSec) 안 9그릇 이상 또는 10분(recentSec) 안 13그릇 이상이 연속 stableN회 유지되면 거실 홈미니로 방송(20분 쿨다운). 세트할인은 -1그릇."
 }

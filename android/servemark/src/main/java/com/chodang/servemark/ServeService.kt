@@ -51,6 +51,8 @@ class ServeService : AccessibilityService() {
         private set
     lateinit var soup: Soup
         private set
+    lateinit var busy: BusyMonitor
+        private set
     private var kds: KdsServer? = null
     private lateinit var wm: WindowManager
     private var overlay: OverlayView? = null
@@ -75,7 +77,8 @@ class ServeService : AccessibilityService() {
         announcer = Announcer(this)
         kitchen.announce = { announcer.event(it) }
         soup = Soup(this).also { it.announce = { t -> announcer.event(t) } }
-        kds = KdsServer(this, kitchen, announcer, soup) { overlay?.invalidate() }.also { it.start() }
+        busy = BusyMonitor()
+        kds = KdsServer(this, kitchen, announcer, soup, busy) { overlay?.invalidate() }.also { it.start() }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
@@ -390,6 +393,7 @@ class ServeService : AccessibilityService() {
             .map { it.label }
             .sortedWith(compareBy<String>({ if (marks.priority(it) > 0) 0 else 1 },
                 { marks.priority(it).takeIf { p -> p > 0 } ?: marks.orderSince(it) }))
+        busy.evaluate(visibleTables, { marks.orderSince(it) }, { itemsOf(it) }, now)
     }
 
     // ------------------------------------------------------------------

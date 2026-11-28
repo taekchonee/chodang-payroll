@@ -24,8 +24,9 @@ import kotlin.concurrent.thread
  *  POST /api/soup/undo?key= → 방금 누른 것 되돌리기 (15초 안)
  *  POST /api/rice/start?pots= → 아침 시작 밥 솥 수
  *  POST /api/soup/set?key=&i=&pct= → 직원이 바트/솥 남은 % 를 고침
+ *  GET  /api/busy      → 포스 혼잡 상태 (5분/10분 그릇 수)
  */
-class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val soup: Soup, private val onChange: () -> Unit) {
+class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val soup: Soup, private val busy: BusyMonitor, private val onChange: () -> Unit) {
 
     companion object { const val PORT = 8080 }
 
@@ -90,6 +91,8 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                     "\n\n마지막 화면 읽기: " + Diag.lastScan).toByteArray())
             method == "GET" && path == "/api/soup" ->
                 send(sock, 200, "application/json; charset=utf-8", soup.json().toByteArray())
+            method == "GET" && path == "/api/busy" ->
+                send(sock, 200, "application/json; charset=utf-8", busy.json().toByteArray())
             method == "POST" && path == "/api/soup/open" -> {
                 val ok = q("key")?.let { soup.open(it) } ?: false
                 send(sock, 200, "application/json; charset=utf-8", soup.json().replaceFirst("{", "{\"ok\":$ok,").toByteArray())

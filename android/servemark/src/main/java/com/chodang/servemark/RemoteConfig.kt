@@ -33,6 +33,8 @@ object RemoteConfig {
     /** 공기밥 (시간대 자료는 settings.json 의 rice.weekday / rice.weekend) */
     @Volatile var rice = Soup.Rice(listOf("초당순두부", "짬뽕순두부", "한우미역국", "전복미역국", "황태해장국", "공기밥"),
         17, 40, 3, "14:30", "밥 지으세요", 15, emptyMap(), emptyMap()); private set
+    /** 포스 혼잡 알림 설정 */
+    @Volatile var busy = BusyMonitor.Config(); private set
     /** 방송 문구 (빈 문구면 방송 안 함) */
     @Volatile private var phrases = mapOf("new" to "신규주문", "change" to "메뉴변경 발생", "add" to "추가주문, {table}번 테이블, {items}", "void" to "", "move" to "")
     /** 묶음 조리 안내: "{name} {n}개 추가", name 은 줄임말 */
@@ -117,6 +119,22 @@ object RemoteConfig {
         phrases = map("phrases", phrases)
         batchNames = map("batchNames", batchNames)
         batchFormat = j.optString("batchFormat", batchFormat)
+        j.optJSONObject("busy")?.let { b ->
+            fun strList(k: String, d: List<String>) = b.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: d
+            busy = BusyMonitor.Config(
+                enabled = b.optBoolean("enabled", busy.enabled),
+                dishLightMin = b.optInt("dishLightMin", busy.dishLightMin),
+                dishRecentMin = b.optInt("dishRecentMin", busy.dishRecentMin),
+                lightSec = b.optInt("lightSec", busy.lightSec),
+                recentSec = b.optInt("recentSec", busy.recentSec),
+                stableN = b.optInt("stableN", busy.stableN),
+                clearSec = b.optInt("clearSec", busy.clearSec),
+                cooldownSec = b.optInt("cooldownSec", busy.cooldownSec),
+                webhookUrl = b.optString("webhookUrl", busy.webhookUrl),
+                notDish = strList("notDish", busy.notDish),
+                setMinus = strList("setMinus", busy.setMinus),
+            )
+        }
     }
 
     private fun stamp(t: Long) = SimpleDateFormat("MM-dd HH:mm", Locale.KOREA).format(Date(t))
