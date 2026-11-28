@@ -113,6 +113,9 @@ class AlertService : Service() {
                     @Deprecated("Deprecated in Java") override fun onError(id: String?) = afterSpeak()
                 })
                 ttsReady = true
+                sendLog("TTS 준비 완료")
+            } else {
+                sendLog("TTS 초기화 실패 ($ok)")
             }
         }, engine)
     }
@@ -207,11 +210,16 @@ class AlertService : Service() {
                 val j = get("http://$host:$PORT/api/announce?since=$since", 35_000)
                 val seq = j.optLong("seq", since)
                 val items = j.optJSONArray("items")
-                if (since >= 0 && items != null) for (i in 0 until items.length()) speak(items.getJSONObject(i).getString("text"))
+                if (since >= 0 && items != null) for (i in 0 until items.length()) {
+                    val txt = items.getJSONObject(i).getString("text")
+                    speak(txt)
+                    sendLog("방송 읽음: $txt")
+                }
                 since = seq
                 fails = 0
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 fails++
+                if (fails == 3) sendLog("연결 끊김 (${e.message ?: "오류"})")
                 if (fails >= 3) { prefs.host = ""; fails = 0 }
                 sleep(5_000)
             }
@@ -249,7 +257,21 @@ class AlertService : Service() {
     private fun set(s: String) {
         if (s == status) return
         status = s
+        sendLog("상태: $s")
         getSystemService(NotificationManager::class.java).notify(1, notification(s))
+    }
+
+    private fun sendLog(text: String) {
+        val h = prefs.host.ifEmpty { return }
+        thread(isDaemon = true) {
+            runCatching {
+                val q = java.net.URLEncoder.encode(text, "UTF-8")
+                (URL("http://$h:$PORT/api/log?app=staff&msg=$q").openConnection() as HttpURLConnection).run {
+                    requestMethod = "POST"; connectTimeout = 1000; readTimeout = 1500
+                    responseCode; disconnect()
+                }
+            }
+        }
     }
 
     private fun notification(text: String): Notification {

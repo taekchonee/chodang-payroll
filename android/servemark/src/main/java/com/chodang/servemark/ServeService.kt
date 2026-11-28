@@ -71,6 +71,7 @@ class ServeService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        Diag.init(this)
         marks = Marks(this)
         RemoteConfig.init(this)
         kitchen = Kitchen(this)

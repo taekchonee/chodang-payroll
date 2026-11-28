@@ -125,8 +125,21 @@ class SignController(context: Context) {
         } catch (e: Exception) {
             "$time 실패: $what (${e.message})"
         }
+        sendLog(lastStatus)
         lastStatus
     })
+
+    fun sendLog(msg: String) {
+        Thread {
+            runCatching {
+                val q = java.net.URLEncoder.encode(msg, "UTF-8")
+                (java.net.URL("http://127.0.0.1:8080/api/log?app=led&msg=$q").openConnection() as java.net.HttpURLConnection).run {
+                    requestMethod = "POST"; connectTimeout = 1000; readTimeout = 1500
+                    responseCode; disconnect()
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
 
     fun shutdown() = worker.shutdownNow()
 }

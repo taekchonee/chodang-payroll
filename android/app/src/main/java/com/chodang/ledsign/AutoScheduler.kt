@@ -58,6 +58,7 @@ class AutoScheduler(
 
         val result = controller.show(schedule.request(target))
         lastMessage = "자동 전환(${target.label}) → $result"
+        controller.sendLog(lastMessage)
         if (result.contains("성공")) {
             applied = target
             lastFailAt = 0

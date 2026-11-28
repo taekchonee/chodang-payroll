@@ -68,7 +68,10 @@ class MainActivity : Activity() {
             settings.userAgentString = settings.userAgentString + " ChodangKDS"
             webViewClient = object : WebViewClient() {
                 @Deprecated("Deprecated in Java")
-                override fun onReceivedError(v: WebView?, code: Int, d: String?, url: String?) { find() }
+                override fun onReceivedError(v: WebView?, code: Int, d: String?, url: String?) {
+                    sendLog("화면 오류($code): ${d ?: ""}")
+                    find()
+                }
             }
         }
         msg = TextView(this).apply {
@@ -126,6 +129,7 @@ class MainActivity : Activity() {
                 val h = found.get()
                 if (h != null) {
                     host = h; prefs.edit().putString("host", h).apply(); open(h)
+                    sendLog("포스기 연결됨 ($h)")
                 } else {
                     msg.text = "포스기를 찾지 못했습니다\n포스기의 '서빙 표시' 앱이 켜져 있는지, 같은 와이파이인지 확인해 주세요\n(10초 뒤 다시 찾습니다)"
                     handler.postDelayed({ find() }, 10_000)
@@ -141,6 +145,19 @@ class MainActivity : Activity() {
             disconnect(); ok
         }
     } catch (_: Exception) { false }
+
+    private fun sendLog(text: String) {
+        val h = host ?: return
+        thread(isDaemon = true) {
+            runCatching {
+                val q = java.net.URLEncoder.encode(text, "UTF-8")
+                (URL("http://$h:$port/api/log?app=kds&msg=$q").openConnection() as HttpURLConnection).run {
+                    requestMethod = "POST"; connectTimeout = 1000; readTimeout = 1500
+                    responseCode; disconnect()
+                }
+            }
+        }
+    }
 
     private fun myPrefix(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }

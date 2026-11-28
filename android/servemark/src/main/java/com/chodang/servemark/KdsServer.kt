@@ -25,6 +25,7 @@ import kotlin.concurrent.thread
  *  POST /api/rice/start?pots= → 아침 시작 밥 솥 수
  *  POST /api/soup/set?key=&i=&pct= → 직원이 바트/솥 남은 % 를 고침
  *  GET  /api/busy      → 포스 혼잡 상태 (5분/10분 그릇 수)
+ *  POST /api/log?app=&msg= → 다른 앱(간판·주방·알림) 원격 로그 접수
  */
 class KdsServer(context: Context, private val kitchen: Kitchen, private val announcer: Announcer, private val soup: Soup, private val busy: BusyMonitor, private val onChange: () -> Unit) {
 
@@ -86,9 +87,18 @@ class KdsServer(context: Context, private val kitchen: Kitchen, private val anno
                 val ip = sock.inetAddress?.hostAddress ?: "?"
                 send(sock, 200, "application/json; charset=utf-8", announcer.poll(since, ip, 25_000).toString().toByteArray())
             }
-            method == "GET" && path == "/api/diag" ->
-                send(sock, 200, "text/plain; charset=utf-8", (Diag.recent(300).joinToString("\n") +
+            method == "GET" && path == "/api/diag" -> {
+                val appFilter = q("app")
+                val limit = q("n")?.toIntOrNull()?.coerceIn(1, 3000) ?: 500
+                send(sock, 200, "text/plain; charset=utf-8", (Diag.readLogs(appFilter, limit) +
                     "\n\n마지막 화면 읽기: " + Diag.lastScan).toByteArray())
+            }
+            method == "POST" && path == "/api/log" -> {
+                val appName = q("app")?.trim().orEmpty().ifEmpty { "etc" }.take(20)
+                val msgText = q("msg")?.trim().orEmpty().take(500)
+                if (msgText.isNotEmpty()) Diag.add(appName, msgText)
+                send(sock, 200, "application/json", "{\"ok\":${msgText.isNotEmpty()}}".toByteArray())
+            }
             method == "GET" && path == "/api/soup" ->
                 send(sock, 200, "application/json; charset=utf-8", soup.json().toByteArray())
             method == "GET" && path == "/api/busy" ->
