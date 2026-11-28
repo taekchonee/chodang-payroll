@@ -85,14 +85,19 @@ class Announcer(context: Context) {
         if (!mini || !enabled) { Diag.add("주방 방송(폰만): \"$text\""); return }
         val target = url
         net.execute {
-            val r = try {
-                (URL(target).openConnection() as HttpURLConnection).run {
-                    requestMethod = "POST"; connectTimeout = 3000; readTimeout = 5000; doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    outputStream.use { it.write(JSONObject().put("message", text).toString().toByteArray()) }
-                    val c = responseCode; disconnect(); "응답 $c"
-                }
-            } catch (e: Exception) { "실패 ${e.message}" }
+            var r = ""
+            for (attempt in 1..3) {
+                r = try {
+                    (URL(target).openConnection() as HttpURLConnection).run {
+                        requestMethod = "POST"; connectTimeout = 4000; readTimeout = 6000; doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        outputStream.use { it.write(JSONObject().put("message", text).toString().toByteArray()) }
+                        val c = responseCode; disconnect(); if (c in 200..299) "응답 $c" else "오류 $c"
+                    }
+                } catch (e: Exception) { "실패 ${e.message}" }
+                if (r.startsWith("응답")) break
+                if (attempt < 3) runCatching { Thread.sleep(1500) }
+            }
             Diag.add("주방 방송: \"$text\" ($r)")
         }
     }

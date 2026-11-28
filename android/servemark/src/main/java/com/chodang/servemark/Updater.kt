@@ -29,7 +29,7 @@ class Updater(private val act: Activity, private val apkName: String) {
         private var registered = false
 
         fun get(url: String): ByteArray = (URL(url).openConnection() as HttpURLConnection).run {
-            connectTimeout = 8000; readTimeout = 60000; instanceFollowRedirects = true
+            connectTimeout = 8000; readTimeout = 60000; instanceFollowRedirects = true; useCaches = false
             try { inputStream.use { it.readBytes() } } finally { disconnect() }
         }
     }
@@ -46,7 +46,7 @@ class Updater(private val act: Activity, private val apkName: String) {
     /** (최신 번호 또는 null, 지금 번호) */
     fun check(done: (Long?, Long) -> Unit) = thread {
         val latest = runCatching {
-            JSONObject(get(BASE + "version.json").toString(Charsets.UTF_8)).optLong(apkName.removeSuffix(".apk"), -1L)
+            JSONObject(get(BASE + "version.json?t=" + System.currentTimeMillis()).toString(Charsets.UTF_8)).optLong(apkName.removeSuffix(".apk"), -1L)
         }.getOrNull()?.takeIf { it > 0 }
         main.post { done(latest, currentCode()) }
     }
@@ -60,7 +60,7 @@ class Updater(private val act: Activity, private val apkName: String) {
         msg("새 버전 받는 중…")
         thread {
             try {
-                val apk = get(BASE + apkName)
+                val apk = get(BASE + apkName + "?t=" + System.currentTimeMillis())
                 val pi = act.packageManager.packageInstaller
                 val id = pi.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
                 pi.openSession(id).use { s ->

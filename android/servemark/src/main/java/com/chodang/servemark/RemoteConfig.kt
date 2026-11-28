@@ -75,13 +75,14 @@ object RemoteConfig {
         lastTry = now
         thread(isDaemon = true) {
             runCatching {
-                val text = Updater.get(Updater.BASE + "settings.json").toString(Charsets.UTF_8)
+                val t = System.currentTimeMillis()
+                val text = Updater.get(Updater.BASE + "settings.json?t=$t").toString(Charsets.UTF_8)
                 apply(text)
                 File(dir, "settings.json").writeText(text)
                 status = "GitHub (" + stamp(System.currentTimeMillis()) + ")"
             }.onFailure { Diag.add("설정 받기 실패: ${it.message}") }
             runCatching {
-                val h = Updater.get(Updater.BASE + "kds.html")
+                val h = Updater.get(Updater.BASE + "kds.html?t=" + System.currentTimeMillis())
                 if (String(h, Charsets.UTF_8).contains("</html>")) { File(dir, "kds.html").writeBytes(h); html = h }
             }
         }
