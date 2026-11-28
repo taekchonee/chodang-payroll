@@ -364,12 +364,9 @@ class ServeService : AccessibilityService() {
                 kitchen.newOrder(t.label, items, now)
             } else if (kitchen.update(t.label, items, now) || amount > marks.lastAmount(t.label)) {
                 marks.setAmount(t.label, amount)
-                if (marks.has(t.label)) {
-                    // 서빙 끝난 테이블의 추가 주문 → 표시를 풀고 맨 앞으로
-                    marks.remove(t.label)
-                    marks.setPriority(t.label, now)
-                    Diag.add("${t.label} 추가 주문 → 서빙완료 해제, 우선 서빙")
-                }
+                // 서빙 끝난 테이블의 추가 주문(소주·공기밥 등 포함)은 홀 순서를 건드리지 않음 — 서빙완료 그대로.
+                // (주방 화면의 '추가 주문' 카드와 방송은 그대로 나감)
+                if (marks.has(t.label)) Diag.add("${t.label} 추가 주문 (서빙완료 유지)")
             } else if (amount < marks.lastAmount(t.label)) {
                 marks.setAmount(t.label, amount)  // 일부 취소
             }
