@@ -60,7 +60,7 @@
   - 스크롤은 마우스 휠 X, 끌기로. PC 키보드 입력 X → 포스기 화면 키보드를 눌러 입력. 클립보드 넘김은 가끔 안 됨.
   - 이지포스 전체화면이라 아래 탐색 버튼이 숨음 → 화면 아래에서 위로 끌어 올리면 나타남.
   - 접근성 앱(서빙 표시) 설치는 Play 프로텍트가 막음 → 사장님이 검사를 끄고 설치.
-- 홈어시스턴트 192.168.0.45 (80번 포트). 주방 방송 웹훅 `chodang_kds_announce` → `tts.speak`(Edge TTS) → `media_player.maejang_maejangjubang_hommini`, 볼륨 100%. 자동화 추가는 "HA와 SmartThings 통합 범위" 세션(local_9447e316-…)에 부탁했음 — 추가됐는지 사장님께 확인. 파일: `homeassistant/kitchen-announce.yaml`.
+- 홈어시스턴트 192.168.0.45 (80번 포트). 주방 방송 웹훅 `chodang_kds_announce` → `tts.speak`(Edge TTS) → `media_player.maejang_maejangjubang_hommini`, 볼륨 100%. 2026-11-28 까지 이 자동화가 HA 에 없어서 홈미니가 안 울렸음 → 2026-11-28 09:43 추가·시험 완료(`automation.jubang_bangsong_seobing_pyosi_aeb`, script.store_announce 사용, 볼륨 100%). 시험할 때 Windows 셸에서 한글을 그냥 보내면 CP949 로 가서 HA 가 오류 → node 로 UTF-8 파일을 만들어 보낼 것. 파일: `homeassistant/kitchen-announce.yaml`.
 - 이 PC 에 CCTV(Agent DVR)가 돎. 무거운 작업·재부팅 조심.
 
 ---
